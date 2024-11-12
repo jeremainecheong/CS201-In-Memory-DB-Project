@@ -6,6 +6,7 @@ import java.util.*;
 public class BackwardsStackTable implements Table {
     private final List<String> columns;
     private Stack<Map<String, String>> rows;
+    private static final int BATCH_SIZE = 100; // Process data in batches for better efficiency
 
     public BackwardsStackTable(List<String> columns) {
         this.columns = new ArrayList<>(columns);
@@ -25,19 +26,27 @@ public class BackwardsStackTable implements Table {
     public List<Map<String, String>> select(List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
         Stack<Map<String, String>> tempStack = new Stack<>();
-        boolean matchAny = false; // For OR conditions
+        List<Map<String, String>> batch = new ArrayList<>(BATCH_SIZE);
 
-        // Pop everything (backwards access pattern)
+        // Process in batches to reduce memory churn
         while (!rows.isEmpty()) {
-            Map<String, String> row = rows.pop();
-            boolean matches = evaluateConditions(row, conditions);
-            if (matches) {
-                results.add(new HashMap<>(row));
+            // Fill a batch
+            while (!rows.isEmpty() && batch.size() < BATCH_SIZE) {
+                Map<String, String> row = rows.pop();
+                batch.add(row);
+                tempStack.push(row);
             }
-            tempStack.push(row);
+
+            // Process the batch
+            for (Map<String, String> row : batch) {
+                if (evaluateConditions(row, conditions)) {
+                    results.add(new HashMap<>(row));
+                }
+            }
+            batch.clear();
         }
 
-        // Push everything back
+        // Restore the stack
         while (!tempStack.isEmpty()) {
             rows.push(tempStack.pop());
         }
@@ -49,16 +58,28 @@ public class BackwardsStackTable implements Table {
     public int update(String column, String value, List<String[]> conditions) {
         int count = 0;
         Stack<Map<String, String>> tempStack = new Stack<>();
+        List<Map<String, String>> batch = new ArrayList<>(BATCH_SIZE);
 
+        // Process in batches
         while (!rows.isEmpty()) {
-            Map<String, String> row = rows.pop();
-            if (evaluateConditions(row, conditions)) {
-                row.put(column, value);
-                count++;
+            // Fill a batch
+            while (!rows.isEmpty() && batch.size() < BATCH_SIZE) {
+                Map<String, String> row = rows.pop();
+                batch.add(row);
             }
-            tempStack.push(row);
+
+            // Process the batch
+            for (Map<String, String> row : batch) {
+                if (evaluateConditions(row, conditions)) {
+                    row.put(column, value);
+                    count++;
+                }
+                tempStack.push(row);
+            }
+            batch.clear();
         }
 
+        // Restore the stack in original order
         while (!tempStack.isEmpty()) {
             rows.push(tempStack.pop());
         }
@@ -70,16 +91,28 @@ public class BackwardsStackTable implements Table {
     public int delete(List<String[]> conditions) {
         int count = 0;
         Stack<Map<String, String>> tempStack = new Stack<>();
+        List<Map<String, String>> batch = new ArrayList<>(BATCH_SIZE);
 
+        // Process in batches
         while (!rows.isEmpty()) {
-            Map<String, String> row = rows.pop();
-            if (!evaluateConditions(row, conditions)) {
-                tempStack.push(row);
-            } else {
-                count++;
+            // Fill a batch
+            while (!rows.isEmpty() && batch.size() < BATCH_SIZE) {
+                Map<String, String> row = rows.pop();
+                batch.add(row);
             }
+
+            // Process the batch
+            for (Map<String, String> row : batch) {
+                if (!evaluateConditions(row, conditions)) {
+                    tempStack.push(row);
+                } else {
+                    count++;
+                }
+            }
+            batch.clear();
         }
 
+        // Restore non-deleted rows
         while (!tempStack.isEmpty()) {
             rows.push(tempStack.pop());
         }

@@ -5,15 +5,18 @@ import java.util.*;
 
 public class PingPongTable implements Table {
     private final List<String> columns;
-    private List<Map<String, String>> activeList;    // Currently "hot" data
-    private List<Map<String, String>> inactiveList;  // Currently "cold" data
-    private int pingPongThreshold = 1000;            // When to switch lists
+    private List<Map<String, String>> activeList;    // "Hot" data
+    private List<Map<String, String>> inactiveList;  // "Cold" data
+    private Map<Map<String, String>, Integer> accessCounts;  // Track access frequency
+    private static final int PING_PONG_THRESHOLD = 5000;  // More realistic threshold
+    private static final int HOT_ACCESS_THRESHOLD = 3;    // Number of accesses to consider data "hot"
     private int operationCount = 0;
 
     public PingPongTable(List<String> columns) {
         this.columns = new ArrayList<>(columns);
         this.activeList = new ArrayList<>();
         this.inactiveList = new ArrayList<>();
+        this.accessCounts = new HashMap<>();
     }
 
     @Override
@@ -23,36 +26,44 @@ public class PingPongTable implements Table {
             row.put(columns.get(i), values.get(i));
         }
 
-        // New data always goes to active list
-        activeList.add(row);
+        // New data starts in inactive list
+        inactiveList.add(row);
+        accessCounts.put(row, 1);
+
         checkAndSwap();
     }
 
     @Override
     public List<Map<String, String>> select(List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
-        Set<Map<String, String>> matched = new HashSet<>();  // Track matches for bouncing
 
-        // Check active list first (likely to find matches here)
+        // Check active list first
         for (Map<String, String> row : activeList) {
             if (evaluateConditions(row, conditions)) {
                 results.add(new HashMap<>(row));
-                matched.add(row);
+                incrementAccess(row);
             }
         }
 
         // Then check inactive list
+        List<Map<String, String>> toPromote = new ArrayList<>();
         for (Map<String, String> row : inactiveList) {
             if (evaluateConditions(row, conditions)) {
                 results.add(new HashMap<>(row));
-                matched.add(row);
-                // Bounce matching rows to active list (they're being used)
-                activeList.add(row);
+                incrementAccess(row);
+                
+                // If row is frequently accessed, mark for promotion
+                if (accessCounts.get(row) >= HOT_ACCESS_THRESHOLD) {
+                    toPromote.add(row);
+                }
             }
         }
 
-        // Remove bounced rows from inactive
-        inactiveList.removeAll(matched);
+        // Promote frequently accessed rows to active list
+        if (!toPromote.isEmpty()) {
+            inactiveList.removeAll(toPromote);
+            activeList.addAll(toPromote);
+        }
 
         checkAndSwap();
         return results;
@@ -61,28 +72,37 @@ public class PingPongTable implements Table {
     @Override
     public int update(String column, String value, List<String[]> conditions) {
         int count = 0;
-        Set<Map<String, String>> matched = new HashSet<>();
-
-        // Update in active list
+        
+        // Update active list
         for (Map<String, String> row : activeList) {
             if (evaluateConditions(row, conditions)) {
                 row.put(column, value);
                 count++;
-                matched.add(row);
+                incrementAccess(row);
             }
         }
 
-        // Update in inactive list and bounce updated rows
+        // Update inactive list
+        List<Map<String, String>> toPromote = new ArrayList<>();
         for (Map<String, String> row : inactiveList) {
             if (evaluateConditions(row, conditions)) {
                 row.put(column, value);
                 count++;
-                matched.add(row);
-                activeList.add(row);
+                incrementAccess(row);
+                
+                // If row is frequently accessed, mark for promotion
+                if (accessCounts.get(row) >= HOT_ACCESS_THRESHOLD) {
+                    toPromote.add(row);
+                }
             }
         }
 
-        inactiveList.removeAll(matched);
+        // Promote frequently accessed rows
+        if (!toPromote.isEmpty()) {
+            inactiveList.removeAll(toPromote);
+            activeList.addAll(toPromote);
+        }
+
         checkAndSwap();
         return count;
     }
@@ -97,6 +117,7 @@ public class PingPongTable implements Table {
             Map<String, String> row = activeIter.next();
             if (evaluateConditions(row, conditions)) {
                 activeIter.remove();
+                accessCounts.remove(row);
                 count++;
             }
         }
@@ -107,6 +128,7 @@ public class PingPongTable implements Table {
             Map<String, String> row = inactiveIter.next();
             if (evaluateConditions(row, conditions)) {
                 inactiveIter.remove();
+                accessCounts.remove(row);
                 count++;
             }
         }
@@ -120,22 +142,50 @@ public class PingPongTable implements Table {
         return new ArrayList<>(columns);
     }
 
-    // Check if we should swap active/inactive lists
+    private void incrementAccess(Map<String, String> row) {
+        accessCounts.merge(row, 1, Integer::sum);
+    }
+
+    // Check if we should reorganize the lists
     private void checkAndSwap() {
         operationCount++;
-        if (operationCount >= pingPongThreshold) {
-            // Time to swap! Move older active data to inactive
+        if (operationCount >= PING_PONG_THRESHOLD) {
+            // Reset access counts and reorganize data
+            Map<Map<String, String>, Integer> newAccessCounts = new HashMap<>();
             List<Map<String, String>> newActive = new ArrayList<>();
-            // Keep most recent 20% in active
-            int keepCount = Math.max(1, activeList.size() / 5);
-            for (int i = activeList.size() - keepCount; i < activeList.size(); i++) {
-                newActive.add(activeList.get(i));
+            List<Map<String, String>> newInactive = new ArrayList<>();
+
+            // Process active list
+            for (Map<String, String> row : activeList) {
+                int count = accessCounts.get(row);
+                // Decay access count but maintain some history
+                int newCount = Math.max(1, count / 2);
+                newAccessCounts.put(row, newCount);
+                
+                if (newCount >= HOT_ACCESS_THRESHOLD) {
+                    newActive.add(row);
+                } else {
+                    newInactive.add(row);
+                }
             }
-            // Move rest to inactive
-            for (int i = 0; i < activeList.size() - keepCount; i++) {
-                inactiveList.add(activeList.get(i));
+
+            // Process inactive list
+            for (Map<String, String> row : inactiveList) {
+                int count = accessCounts.get(row);
+                // Decay access count but maintain some history
+                int newCount = Math.max(1, count / 2);
+                newAccessCounts.put(row, newCount);
+                
+                if (newCount >= HOT_ACCESS_THRESHOLD) {
+                    newActive.add(row);
+                } else {
+                    newInactive.add(row);
+                }
             }
+
             activeList = newActive;
+            inactiveList = newInactive;
+            accessCounts = newAccessCounts;
             operationCount = 0;
         }
     }
