@@ -1,98 +1,176 @@
-# CS201 In-Memory Database Project
+# smuSQL: When Basic Data Structures Meet Databases
+*What happens when you take CS201 data structures too seriously?*
 
-## Specialized Table Implementations
+## The "What Were You Thinking?" Project
+Ever wondered what would happen if you built a database using the most basic data structures from your first Data Structures and Algorithms class? We did. Instead of using sophisticated B-trees or hash indexes, we went back to basics - way back. Like "Week 2 of DSA" back.
 
-This project implements several specialized table storage strategies, each optimized for different database usage patterns. The evaluation command `evaluate` in the application runs a comprehensive test suite that demonstrates how each implementation excels in specific scenarios.
+## The Unconventional Four
 
-### BackwardsStackTable
-**Optimized for**: LIFO (Last-In-First-Out) access patterns
-- Excels during the initial data population phase where recent inserts are immediately queried
-- Shows superior performance in the complex query phase when accessing recently inserted data
-- Particularly efficient when:
-  * Running recent analytics (e.g., "SELECT * FROM users WHERE id > X" with high X values)
-  * Processing log data where newest entries are most important
-  * Handling undo/redo operations
+### BackwardsStack: The Database that Thinks It's a Stack of Papers
+*Because sometimes the best way forward is backwards*
+```java
+private Stack<Map<String, String>> rows;
+private static final int BATCH_SIZE = 100;
+```
+Imagine your database is literally a stack of papers on your desk. Need something from the bottom? Sorry, you'll have to pick up everything above it first! But hey, at least it's memory efficient (35.82MB - the neat freak of our implementations).
 
-### LeakyBucketTable
-**Optimized for**: Memory-constrained environments
-- Performs best during the large-scale data insertion phase
-- Shows efficiency when the dataset size exceeds the main bucket capacity (1000 rows)
-- Particularly efficient when:
-  * Running mixed queries on large datasets
-  * Dealing with memory pressure
-  * Handling hot/cold data separation automatically
+**What it actually does:**
+- Processes data in batches of 100 (because even bad ideas need optimization)
+- Uses a temporary stack for operations (yes, we're playing hot potato with your data)
+- Surprisingly memory efficient, albeit a bit slower (2.570s in mixed operations)
 
-### PingPongTable
-**Optimized for**: Temporal locality in data access
-- Excels during repeated access to the same subset of data
-- Shows superior performance in the complex query phase with similar WHERE conditions
-- Particularly efficient when:
-  * Running repeated analytics on the same data subset
-  * Processing time-series data with focus on recent periods
-  * Handling session-based data access
+### LeakyBucket: The Database that Intentionally Forgets
+*Inspired by that one time we left a bucket in the rain*
+```java
+private Bucket mainBucket;      // The bucket we care about
+private Bucket overflowBucket;  // The bucket we care about less
+```
+Like a bucket with a controlled leak, this implementation actually turned out to be our best performer (2.493s in mixed operations). Sometimes letting go is the best strategy!
 
-### RandomQueueTable
-**Optimized for**: Distributed load and concurrent access
-- Performs best during the mixed operation phase with random access patterns
-- Shows balanced performance across all operations
-- Particularly efficient when:
-  * Running mixed workloads with unpredictable patterns
-  * Handling concurrent operations
-  * Dealing with evenly distributed access patterns
+**What it actually does:**
+- Manages data in two buckets: main (1000 rows) and overflow
+- Leaks data when main bucket hits 90% capacity
+- Periodically cleans up after itself (every 10000 operations)
 
-## Performance Analysis
+### PingPong: The Database that Can't Sit Still
+*Because sometimes you need to keep your data fit and active*
+```java
+private List<Map<String, String>> activeList;    // The "fit" data
+private List<Map<String, String>> inactiveList;  // The "lazy" data
+private Map<Map<String, String>, Integer> accessCounts;
+```
+Data bounces between active and inactive lists based on usage. Think of it as a fitness program for your data - use it or lose it! Balanced performance (2.536s) with reasonable memory usage (49.72MB).
 
-When running the evaluation command, observe how each implementation performs differently in various phases:
+### RandomQueue: The Database with Multiple Personality Order
+*Four queues are better than one, right?*
+```java
+private final List<Queue<Map<String, String>>> queues;
+private static final int NUM_QUEUES = 4;
+```
+Distributes data across four queues using hash-based allocation. Like choosing the shortest line at the supermarket, except we're using math! Solid middle-ground performer (2.528s).
 
-1. **Initial Population Phase**
-   - BackwardsStackTable: Fast inserts with immediate access
-   - LeakyBucket: Efficient memory management as data grows
-   - PingPong: Builds up active/inactive sets
-   - RandomQueue: Distributes load across queues
+## The "Theory vs Reality" Plot Twist
+*Where computer science textbooks get it wrong*
 
-2. **Mixed Operation Phase**
-   - BackwardsStackTable: Fast on recent data, slower on older
-   - LeakyBucket: Consistent performance with automatic data tiering
-   - PingPong: Adapts to access patterns
-   - RandomQueue: Maintains steady performance
+### INSERT Operations: The O(1) Lie
+**What Theory Promised:**
+```
+All implementations: O(1)
+"Just put it at the top/end! How hard can it be?"
+```
 
-3. **Complex Query Phase**
-   - BackwardsStackTable: Excels when conditions match recent data
-   - LeakyBucket: Efficient when queried data is in main bucket
-   - PingPong: Superior when repeatedly accessing same data subset
-   - RandomQueue: Consistent performance regardless of pattern
+**What Actually Happened (99th percentile):**
+```
+BackwardsStack: 7.324ms  (Stack overflow... of disappointment)
+RandomQueue:    4.762ms  (Four queues, four times the chaos)
+PingPong:      3.550ms  (Bouncing is expensive)
+LeakyBucket:   3.292ms  (Winning by leaking!)
+```
 
-## Interpreting Results
+### SELECT Operations: The Great Equalizer
+**What Theory Promised:**
+```
+BackwardsStack: O(n)     "Stack traversal? A terrible idea!"
+LeakyBucket:   O(m + o)  "Double scanning? Even worse!"
+PingPong:      O(a + i)  "Two lists? Not great!"
+RandomQueue:    O(n/k)   "Finally, some parallelism!"
+```
 
-The TableMonitor provides insights into each implementation's performance. Look for:
+**What Actually Happened:**
+```
+Simple Select (50th percentile): Everyone at ~0.220ms
+Complex Select (50th percentile): Everyone at ~1.430ms
+Plot Twist: They're all the same! 
+```
 
-1. **BackwardsStackTable**
-   - Fast response times for recent data operations
-   - Increasing latency for older data access
-   - Best performance in recent data heavy workloads
+## Memory Games: The Storage Story
+```
+Implementation | Memory   | What We Expected        | What We Got
+--------------|----------|------------------------|-------------
+BackwardsStack| 35.82MB  | "Memory nightmare"     | Most efficient!
+PingPong      | 49.72MB  | "Double the lists,    | Surprisingly reasonable
+             |          | double the memory"     |
+LeakyBucket   | 51.25MB  | "Leaky = wasteful"    | Best performer
+RandomQueue   | 51.93MB  | "Should be efficient" | Most hungry
+```
 
-2. **LeakyBucketTable**
-   - Consistent performance despite growing data size
-   - Occasional spikes during bucket rebalancing
-   - Efficient memory utilization
+## Performance Theatre: The Three-Act Play
 
-3. **PingPongTable**
-   - Improving performance on frequently accessed data
-   - Periodic overhead during list swapping
-   - Adaptation to access patterns
+### Act 1: Population Phase
+*Where first impressions are made*
+```
+LeakyBucket & RandomQueue: 0.491s, 0.492s (The speed demons)
+BackwardsStack: 0.560s (Fashionably late)
+Memory Usage: All ~7-8MB (Everyone starts humble)
+```
 
-4. **RandomQueueTable**
-   - Even distribution of operation times
-   - No significant performance degradation under load
-   - Balanced overall performance
+### Act 2: Mixed Operations Phase
+*Where the real drama unfolds*
+```
+LeakyBucket: 2.493s (The unexpected hero)
+RandomQueue: 2.528s (The consistent performer)
+PingPong:    2.536s (The balanced artist)
+BackwardsStack: 2.570s (The efficient struggler)
+```
 
-## Usage Recommendations
+### Act 3: Complex Queries
+*Where everyone shows their true colors*
+```
+LeakyBucket: 0.621s (Still winning!)
+BackwardsStack: 0.650s (Slow but steady)
+Everyone else: Somewhere in between
+Plot twist: Some showed negative memory usage 
+(We're still trying to figure that one out)
+```
 
-Choose the appropriate implementation based on your workload:
+## Choose Your Fighter
 
-- Use **BackwardsStackTable** when recent data access is priority
-- Use **LeakyBucketTable** when dealing with memory constraints
-- Use **PingPongTable** when access patterns have temporal locality
-- Use **RandomQueueTable** when workload patterns are unpredictable
+### BackwardsStack: The Memory Miser
+- ✓ Best memory efficiency (35.82MB)
+- ✓ Predictable performance patterns
+- ⚠ INSERT spikes that'll wake you up at night
+- Perfect for: Systems where memory is expensive and latency spikes are funny
 
-The evaluation results will show how each implementation handles different phases of the test suite, highlighting their strengths in their optimized scenarios.
+### LeakyBucket: The Surprise Champion
+- ✓ Best overall performance (2.493s mixed ops)
+- ✓ Most consistent latency
+- ⚠ Memory usage is... generous
+- Perfect for: When you want to explain to your boss why intentionally losing data is actually good
+
+### PingPong: The Balanced Performer
+- ✓ Reasonable memory usage (49.72MB)
+- ✓ Consistent performance
+- ⚠ All that bouncing adds up
+- Perfect for: When you can't decide if you want good or bad performance, so you settle for okay
+
+### RandomQueue: The Consistent Mediocrity
+- ✓ Predictable performance
+- ✓ Good distribution
+- ⚠ Highest memory usage (51.93MB)
+- Perfect for: When you want to explain distributed systems but only have 5 minutes
+
+## Lessons Learned
+
+1. **The O(1) Myth**
+   - Theory: "It's constant time!"
+   - Reality: "Constants matter... a lot"
+
+2. **Memory vs Speed**
+   - Theory: "More memory = better performance"
+   - Reality: BackwardsStack proves less can be more (sometimes)
+
+3. **Complex ≠ Better**
+   - Theory: "More sophisticated = more efficient"
+   - Reality: LeakyBucket won by literally throwing data away
+
+## Final Thoughts
+In a world obsessed with optimization and complexity, our "wrong" implementations taught us something valuable: sometimes the simplest solution isn't just viable - it might be the best option. Even if that solution involves intentionally leaking data or treating your database like a stack of papers.
+
+Remember: The next time someone says "that's not how databases work," you can show them empirical proof that sometimes the worst ideas produce the best results.
+
+*P.S. We're still trying to explain to our professors why the leaky one won.*
+
+## Final Thought
+Remember: This isn't just a project about building a database with basic data structures - it's about challenging assumptions and finding out that sometimes the "wrong" way isn't as wrong as you might think. Just look at LeakyBucket - who knew intentionally forgetting data could be a winning strategy?
+
+*Note: No data structures were permanently harmed during this experiment, though some were mildly embarrassed.*
