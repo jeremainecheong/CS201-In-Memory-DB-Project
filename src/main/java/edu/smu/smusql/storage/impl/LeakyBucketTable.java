@@ -6,7 +6,8 @@ import java.util.*;
 public class LeakyBucketTable implements Table {
     private final List<String> columns;
     private final int MAIN_CAPACITY = 1000;  // Size of main bucket
-    private final int LEAK_THRESHOLD = 800;  // When to start leaking
+    private final int LEAK_THRESHOLD = 900;  // When to start leaking (90% full)
+    private final int CLEANUP_THRESHOLD = 10000; // Less frequent cleanup
 
     private Bucket mainBucket;      // Active data
     private Bucket overflowBucket;  // "Leaked" data
@@ -92,7 +93,7 @@ public class LeakyBucketTable implements Table {
     public List<Map<String, String>> select(List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
 
-        // Check main bucket first
+        // Always check main bucket
         for (int i = 0; i < mainBucket.rows.size(); i++) {
             if (!mainBucket.deletedRows.contains(i)) {
                 Map<String, String> row = mainBucket.rows.get(i);
@@ -102,18 +103,12 @@ public class LeakyBucketTable implements Table {
             }
         }
 
-        // Check overflow bucket if not too busy
-        if (operationCount % 10 != 0) {  // Skip overflow sometimes when busy
-            for (int i = 0; i < overflowBucket.rows.size(); i++) {
-                if (!overflowBucket.deletedRows.contains(i)) {
-                    Map<String, String> row = overflowBucket.rows.get(i);
-                    if (evaluateConditions(row, conditions)) {
-                        results.add(new HashMap<>(row));
-                        // Move frequently accessed overflow data back to main
-                        if (random.nextInt(100) < 10) {  // 10% chance
-                            promoteRow(row);
-                        }
-                    }
+        // Always check overflow bucket too - no skipping
+        for (int i = 0; i < overflowBucket.rows.size(); i++) {
+            if (!overflowBucket.deletedRows.contains(i)) {
+                Map<String, String> row = overflowBucket.rows.get(i);
+                if (evaluateConditions(row, conditions)) {
+                    results.add(new HashMap<>(row));
                 }
             }
         }
@@ -138,15 +133,13 @@ public class LeakyBucketTable implements Table {
             }
         }
 
-        // Update overflow if not too busy
-        if (operationCount % 5 != 0) {  // Skip overflow sometimes
-            for (int i = 0; i < overflowBucket.rows.size(); i++) {
-                if (!overflowBucket.deletedRows.contains(i)) {
-                    Map<String, String> row = overflowBucket.rows.get(i);
-                    if (evaluateConditions(row, conditions)) {
-                        row.put(column, value);
-                        count++;
-                    }
+        // Always update overflow bucket too
+        for (int i = 0; i < overflowBucket.rows.size(); i++) {
+            if (!overflowBucket.deletedRows.contains(i)) {
+                Map<String, String> row = overflowBucket.rows.get(i);
+                if (evaluateConditions(row, conditions)) {
+                    row.put(column, value);
+                    count++;
                 }
             }
         }
@@ -171,15 +164,13 @@ public class LeakyBucketTable implements Table {
             }
         }
 
-        // Delete from overflow if not too busy
-        if (operationCount % 5 != 0) {
-            for (int i = 0; i < overflowBucket.rows.size(); i++) {
-                if (!overflowBucket.deletedRows.contains(i)) {
-                    Map<String, String> row = overflowBucket.rows.get(i);
-                    if (evaluateConditions(row, conditions)) {
-                        overflowBucket.delete(i);
-                        count++;
-                    }
+        // Always check overflow bucket
+        for (int i = 0; i < overflowBucket.rows.size(); i++) {
+            if (!overflowBucket.deletedRows.contains(i)) {
+                Map<String, String> row = overflowBucket.rows.get(i);
+                if (evaluateConditions(row, conditions)) {
+                    overflowBucket.delete(i);
+                    count++;
                 }
             }
         }
@@ -194,14 +185,13 @@ public class LeakyBucketTable implements Table {
         return new ArrayList<>(columns);
     }
 
-    private final Random random = new Random();
-
     private void leakData() {
-        // Move older data to overflow
-        int toMove = mainBucket.virtualSize - (MAIN_CAPACITY / 2);
+        // Move older data to overflow - about 20% of the data
+        int toMove = mainBucket.virtualSize / 5;
         int moved = 0;
 
-        for (int i = 0; i < mainBucket.rows.size() && moved < toMove; i++) {
+        // Move oldest data (from start of list)
+        for (int i = 0; moved < toMove && i < mainBucket.rows.size(); i++) {
             if (!mainBucket.deletedRows.contains(i)) {
                 overflowBucket.add(mainBucket.rows.get(i));
                 mainBucket.delete(i);
@@ -210,21 +200,15 @@ public class LeakyBucketTable implements Table {
         }
     }
 
-    private void promoteRow(Map<String, String> row) {
-        if (!mainBucket.isFull()) {
-            mainBucket.add(new HashMap<>(row));
-        }
-    }
-
     private void checkCleanup() {
-        if (operationCount >= 1000) {
+        // Only cleanup after many operations
+        if (operationCount >= CLEANUP_THRESHOLD) {
             mainBucket.compact();
             overflowBucket.compact();
             operationCount = 0;
         }
     }
 
-    // Same evaluateConditions and evaluateCondition methods as before
     private boolean evaluateConditions(Map<String, String> row, List<String[]> conditions) {
         if (conditions == null || conditions.isEmpty()) {
             return true;
