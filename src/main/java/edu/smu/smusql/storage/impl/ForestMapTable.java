@@ -180,25 +180,20 @@ public class ForestMapTable implements Table {
         return result;
     }
     
-    private boolean evaluateCondition(String rowValue, String operator, String value) {
-        try {
-            double rowNum = Double.parseDouble(rowValue);
-            double valueNum = Double.parseDouble(value);
+    private boolean evaluateCondition(String rowValueStr, String operator, String valueStr) {
+        Comparable<?> rowValue = parseValue(rowValueStr);
+        Comparable<?> value = parseValue(valueStr);
     
-            return switch (operator) {
-                case "=" -> rowNum == valueNum;
-                case ">" -> rowNum > valueNum;
-                case "<" -> rowNum < valueNum;
-                case ">=" -> rowNum >= valueNum;
-                case "<=" -> rowNum <= valueNum;
-                default -> false;
-            };
-        } catch (NumberFormatException e) {
-            return switch (operator) {
-                case "=" -> rowValue.equals(value);
-                default -> false;
-            };
-        }
+        int comparison = ((Comparable<Object>) rowValue).compareTo(value);
+    
+        return switch (operator) {
+            case "=" -> comparison == 0;
+            case ">" -> comparison > 0;
+            case "<" -> comparison < 0;
+            case ">=" -> comparison >= 0;
+            case "<=" -> comparison <= 0;
+            default -> false;
+        };
     }
 
     @Override
@@ -353,10 +348,16 @@ public class ForestMapTable implements Table {
     }
 
     private Comparable<?> parseValue(String value) {
-        if (value.matches("\\d+")) return Integer.parseInt(value);
-        if (value.matches("\\d+\\.\\d+")) return Double.parseDouble(value);
-        return value;
-    }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e1) {
+            try {
+                return Double.parseDouble(value);
+            } catch (NumberFormatException e2) {
+                return value;
+            }
+        }
+    }    
 
     class Node {
         Comparable<?> value;
