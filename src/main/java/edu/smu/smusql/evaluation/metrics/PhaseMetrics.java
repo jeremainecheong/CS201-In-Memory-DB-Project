@@ -9,6 +9,7 @@ public class PhaseMetrics {
     public long totalTime;            // Total time taken for the phase in nanoseconds
     public long memoryUsed;           // Memory used during the phase in bytes
     public Map<String, List<Long>> operationLatencies = new HashMap<>();  // Operation-wise latencies
+    public DataTypeMetrics dataTypeMetrics = new DataTypeMetrics();  // Data type specific metrics
 
     /**
      * Records the latency for a specific operation type
@@ -17,6 +18,26 @@ public class PhaseMetrics {
      */
     public void recordOperationLatency(String operation, long latency) {
         operationLatencies.computeIfAbsent(operation, k -> new ArrayList<>()).add(latency);
+    }
+
+    /**
+     * Records the latency for a specific operation type with data type information
+     * @param operation The type of operation (e.g., "INSERT", "SELECT", etc.)
+     * @param dataType The data type involved (e.g., "INTEGER", "STRING", etc.)
+     * @param latency The latency in nanoseconds
+     */
+    public void recordOperationLatency(String operation, String dataType, long latency) {
+        recordOperationLatency(operation, latency);
+        dataTypeMetrics.recordLatency(dataType, operation, latency);
+    }
+
+    /**
+     * Records memory usage for a specific data type
+     * @param dataType The data type
+     * @param bytes Memory used in bytes
+     */
+    public void recordDataTypeMemoryUsage(String dataType, long bytes) {
+        dataTypeMetrics.recordMemoryUsage(dataType, bytes);
     }
 
     /**
@@ -100,6 +121,10 @@ public class PhaseMetrics {
             summary.append(String.format("  P90: %.3f\n", getLatencyPercentile(operation, 90) / 1_000_000.0));
             summary.append(String.format("  P99: %.3f\n", getLatencyPercentile(operation, 99) / 1_000_000.0));
         }
+
+        // Add data type specific metrics
+        summary.append("\nData Type Specific Metrics:\n");
+        summary.append(dataTypeMetrics.toString());
 
         return summary.toString();
     }

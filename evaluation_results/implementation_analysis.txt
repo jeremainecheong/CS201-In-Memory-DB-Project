@@ -1,0 +1,59 @@
+Implementation Analysis
+==================================================
+
+
+backwards Implementation:
+----------------------------------------
+Basic Operations Avg: 0.213 ms
+Complex Operations Avg: 0.541 ms
+Write Performance: 0.110 ms
+Read Performance: 0.478 ms
+Operation Consistency: 0.649 (lower is better)
+
+Key Characteristics:
+- Stack-based implementation with batch processing
+- Sequential access pattern
+- Efficient for recent data access
+
+
+leaky Implementation:
+----------------------------------------
+Basic Operations Avg: 0.171 ms
+Complex Operations Avg: 0.519 ms
+Write Performance: 0.083 ms
+Read Performance: 0.438 ms
+Operation Consistency: 0.656 (lower is better)
+
+Key Characteristics:
+- Two-tier storage with controlled data movement
+- Automatic memory management
+- Efficient for hot data access
+
+
+ping Implementation:
+----------------------------------------
+Basic Operations Avg: 0.170 ms
+Complex Operations Avg: 0.491 ms
+Write Performance: 0.079 ms
+Read Performance: 0.424 ms
+Operation Consistency: 0.629 (lower is better)
+
+Key Characteristics:
+- Dual-list system with frequency-based promotion
+- Adaptive to access patterns
+- Good for mixed workloads
+
+
+random Implementation:
+----------------------------------------
+Basic Operations Avg: 0.155 ms
+Complex Operations Avg: 0.491 ms
+Write Performance: 0.073 ms
+Read Performance: 0.407 ms
+Operation Consistency: 0.629 (lower is better)
+
+Key Characteristics:
+- Multiple queue distribution
+- Hash-based allocation
+- Good for parallel access patterns
+
