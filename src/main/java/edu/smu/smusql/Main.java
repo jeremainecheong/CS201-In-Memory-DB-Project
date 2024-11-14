@@ -13,7 +13,6 @@ public class Main {
 
         System.out.println("smuSQL Database System by G2T2");
         System.out.println("=====================");
-        printCommands();
 
         while (true) {
             System.out.print("smusql> ");
@@ -79,8 +78,7 @@ public class Main {
 
         try {
             Instant startTime = Instant.now();
-            ProgressTracker progress = new ProgressTracker();
-            
+
             // Create and run evaluator
             Evaluator evaluator = new Evaluator(dbEngine);
             evaluator.runEvaluation();
@@ -103,33 +101,6 @@ public class Main {
             } else {
                 System.err.println("Run with -Dsmusql.debug=true for stack trace");
             }
-        }
-    }
-
-    private static class ProgressTracker {
-        private int totalSteps = 160; // 4 implementations * 8 data types * 5 runs
-        private int currentStep = 0;
-        private String currentPhase = "";
-        private String currentImplementation = "";
-        private String currentDataType = "";
-
-        public synchronized void updateProgress(String implementation, String dataType, String phase) {
-            currentImplementation = implementation;
-            currentDataType = dataType;
-            currentPhase = phase;
-            currentStep++;
-
-            // Clear previous line and print progress
-            System.out.print("\r");
-            System.out.printf("Progress: [%-50s] %d%% - Testing %s with %s (%s)",
-                "=".repeat((currentStep * 50) / totalSteps),
-                (currentStep * 100) / totalSteps,
-                implementation,
-                dataType,
-                phase);
-
-            // Force flush
-            System.out.flush();
         }
     }
 }
