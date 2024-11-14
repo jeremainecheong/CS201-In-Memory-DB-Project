@@ -5,6 +5,7 @@ import edu.smu.smusql.storage.impl.BackwardsStackTable;
 import edu.smu.smusql.storage.impl.LeakyBucketTable;
 import edu.smu.smusql.storage.impl.PingPongTable;
 import edu.smu.smusql.storage.impl.RandomQueueTable;
+import edu.smu.smusql.storage.impl.ForestMapTable;
 
 import java.util.*;
 
@@ -104,8 +105,11 @@ public class Engine {
             table = new RandomQueueTable(columns);
             implName = "RandomQueue";
         } else if (prefix.startsWith("leaky_")) {
-            table = new LeakyBucketTable(columns);
+            baseTable = new LeakyBucketTable(columns);
             implName = "LeakyBucket";
+        } else if (prefix.startsWith("forest_")) {
+            table = new ForestMapTable(columns);
+            implName = "ForestMap";
         } else {
             // Default to LeakyBucket for unspecified implementations
             table = new LeakyBucketTable(columns);
