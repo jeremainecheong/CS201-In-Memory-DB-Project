@@ -105,7 +105,7 @@ public class Engine {
             table = new RandomQueueTable(columns);
             implName = "RandomQueue";
         } else if (prefix.startsWith("leaky_")) {
-            baseTable = new LeakyBucketTable(columns);
+            table = new LeakyBucketTable(columns);
             implName = "LeakyBucket";
         } else if (prefix.startsWith("forest_")) {
             table = new ForestMapTable(columns);
