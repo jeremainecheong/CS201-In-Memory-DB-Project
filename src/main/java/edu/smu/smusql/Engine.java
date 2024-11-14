@@ -5,7 +5,6 @@ import edu.smu.smusql.storage.impl.BackwardsStackTable;
 import edu.smu.smusql.storage.impl.LeakyBucketTable;
 import edu.smu.smusql.storage.impl.PingPongTable;
 import edu.smu.smusql.storage.impl.RandomQueueTable;
-import edu.smu.smusql.storage.monitor.TableMonitor;
 
 import java.util.*;
 
@@ -20,7 +19,6 @@ public class Engine {
         tables.clear();
     }
 
-    // untouched
     public String executeSQL(String query) {
         String[] tokens = query.trim().split("\\s+");
         String command = tokens[0].toUpperCase();
@@ -36,27 +34,11 @@ public class Engine {
                 return update(tokens);
             case "DELETE":
                 return delete(tokens);
-            case "STATS":
-                return getStats(tokens);
             default:
                 return "ERROR: Unknown command";
         }
     }
 
-    private String getStats(String[] tokens) {
-        if (tokens.length < 2) {
-            return "ERROR: Table name required for STATS";
-        }
-        String tableName = tokens[1];
-        Table table = tables.get(tableName);
-        if (table == null) {
-            return "ERROR: Table '" + tableName + "' does not exist";
-        }
-        if (table instanceof TableMonitor) {
-            return ((TableMonitor) table).getPerformanceReport();
-        }
-        return "ERROR: Table is not monitored";
-    }
     /**
      * Creates a table with specified implementation based on prefix
      */
@@ -70,77 +52,112 @@ public class Engine {
             return "ERROR: Table '" + tableName + "' already exists";
         }
 
-        // Parse column list
-        StringBuilder columnsStr = new StringBuilder();
-        boolean inParens = false;
+        // Find the opening and closing parentheses
+        String columnsString = "";
+        boolean foundOpenParen = false;
         for (int i = 3; i < tokens.length; i++) {
-            if (tokens[i].startsWith("(")) {
-                inParens = true;
-                columnsStr.append(tokens[i].substring(1)).append(" ");
-            } else if (tokens[i].endsWith(")")) {
-                columnsStr.append(tokens[i].substring(0, tokens[i].length() - 1));
-                break;
-            } else if (inParens) {
-                columnsStr.append(tokens[i]).append(" ");
+            String token = tokens[i];
+            if (token.startsWith("(")) {
+                foundOpenParen = true;
+                columnsString = token.substring(1);  // Remove opening parenthesis
+            } else if (foundOpenParen) {
+                if (token.endsWith(")")) {
+                    // Remove closing parenthesis and add the last token
+                    columnsString += " " + token.substring(0, token.length() - 1);
+                    break;
+                } else {
+                    columnsString += " " + token;
+                }
             }
         }
 
-        List<String> columns = Arrays.asList(columnsStr.toString().trim().split(","));
-        for (int i = 0; i < columns.size(); i++) {
-            columns.set(i, columns.get(i).trim());
+        if (columnsString.isEmpty()) {
+            return "ERROR: No columns specified";
+        }
+
+        // Split the columns string and clean up each column name
+        List<String> columns = new ArrayList<>();
+        for (String col : columnsString.split(",")) {
+            String cleanCol = col.trim();
+            if (!cleanCol.isEmpty()) {
+                columns.add(cleanCol);
+            }
+        }
+
+        if (columns.isEmpty()) {
+            return "ERROR: No valid columns specified";
         }
 
         // Create table with specific implementation
-        Table baseTable;
-        String monitorName;
+        Table table;
+        String implName;
         String prefix = tableName.toLowerCase();
 
         // Use explicit prefix checks for evaluation framework
         if (prefix.startsWith("backwards_")) {
-            baseTable = new BackwardsStackTable(columns);
-            monitorName = "BackwardsStack";
+            table = new BackwardsStackTable(columns);
+            implName = "BackwardsStack";
         } else if (prefix.startsWith("ping_")) {
-            baseTable = new PingPongTable(columns);
-            monitorName = "PingPong";
+            table = new PingPongTable(columns);
+            implName = "PingPong";
         } else if (prefix.startsWith("random_")) {
-            baseTable = new RandomQueueTable(columns);
-            monitorName = "RandomQueue";
+            table = new RandomQueueTable(columns);
+            implName = "RandomQueue";
         } else if (prefix.startsWith("leaky_")) {
-            baseTable = new LeakyBucketTable(columns);
-            monitorName = "LeakyBucket";
+            table = new LeakyBucketTable(columns);
+            implName = "LeakyBucket";
         } else {
             // Default to LeakyBucket for unspecified implementations
-            baseTable = new LeakyBucketTable(columns);
-            monitorName = "LeakyBucket";
+            table = new LeakyBucketTable(columns);
+            implName = "LeakyBucket";
         }
 
-        // Wrap with monitor
-        Table monitoredTable = new TableMonitor(baseTable, monitorName);
-        tables.put(tableName, monitoredTable);
-
-        return "Table '" + tableName + "' created with " + monitorName + " implementation";
+        tables.put(tableName, table);
+        return "Table '" + tableName + "' created with " + implName + " implementation";
     }
 
     /**
-     * Inserts a row into a table with performance monitoring
+     * Inserts a row into a table
      */
     public String insert(String[] tokens) {
         try {
+            if (tokens.length < 4 || !tokens[1].equalsIgnoreCase("INTO")) {
+                return "ERROR: Invalid INSERT syntax";
+            }
+
             String tableName = tokens[2];
             Table table = tables.get(tableName);
             if (table == null) {
                 return "ERROR: Table '" + tableName + "' does not exist";
             }
 
-            // Extract values more efficiently
-            String valuesStr = extractParenthesesContent(tokens, 4);
-            if (valuesStr == null) {
-                return "ERROR: Invalid INSERT syntax";
+            // Extract values
+            StringBuilder valuesStr = new StringBuilder();
+            boolean inParens = false;
+            for (int i = 4; i < tokens.length; i++) {
+                String token = tokens[i];
+                if (token.startsWith("(")) {
+                    inParens = true;
+                    valuesStr.append(token.substring(1)).append(" ");
+                } else if (token.endsWith(")")) {
+                    valuesStr.append(token.substring(0, token.length() - 1));
+                    break;
+                } else if (inParens) {
+                    valuesStr.append(token).append(" ");
+                }
             }
 
-            List<String> values = Arrays.asList(valuesStr.split(","));
-            for (int i = 0; i < values.size(); i++) {
-                values.set(i, values.get(i).trim());
+            if (!inParens) {
+                return "ERROR: Invalid INSERT syntax - missing values";
+            }
+
+            List<String> values = new ArrayList<>();
+            for (String value : valuesStr.toString().split(",")) {
+                values.add(value.trim());
+            }
+
+            if (values.size() != table.getColumns().size()) {
+                return "ERROR: Number of values does not match number of columns";
             }
 
             table.insert(values);
@@ -151,7 +168,7 @@ public class Engine {
     }
 
     /**
-     * Executes a SELECT query with improved error handling
+     * Executes a SELECT query
      */
     public String select(String[] tokens) {
         try {
@@ -175,7 +192,7 @@ public class Engine {
     }
 
     /**
-     * Executes an UPDATE query with better condition parsing
+     * Executes an UPDATE query
      */
     public String update(String[] tokens) {
         try {
@@ -197,7 +214,7 @@ public class Engine {
     }
 
     /**
-     * Executes a DELETE query with improved condition handling
+     * Executes a DELETE query
      */
     public String delete(String[] tokens) {
         try {
@@ -213,26 +230,6 @@ public class Engine {
         } catch (Exception e) {
             return "ERROR: Delete failed - " + e.getMessage();
         }
-    }
-
-    // Helper methods
-    private String extractParenthesesContent(String[] tokens, int startIndex) {
-        StringBuilder content = new StringBuilder();
-        boolean inParens = false;
-
-        for (int i = startIndex; i < tokens.length; i++) {
-            if (tokens[i].startsWith("(")) {
-                inParens = true;
-                content.append(tokens[i].substring(1)).append(" ");
-            } else if (tokens[i].endsWith(")")) {
-                content.append(tokens[i].substring(0, tokens[i].length() - 1));
-                break;
-            } else if (inParens) {
-                content.append(tokens[i]).append(" ");
-            }
-        }
-
-        return inParens ? content.toString().trim() : null;
     }
 
     private List<String[]> parseConditions(String[] tokens, int startIndex) {
