@@ -234,18 +234,24 @@ public class Engine {
         List<String[]> conditions = new ArrayList<>();
 
         if (tokens.length > startIndex && tokens[startIndex].equalsIgnoreCase("WHERE")) {
+            String logicalOp = "AND";  // Default logical operator for the first condition
             for (int i = startIndex + 1; i < tokens.length; i++) {
                 if (tokens[i].equalsIgnoreCase("AND") || tokens[i].equalsIgnoreCase("OR")) {
-                    conditions.add(new String[] {tokens[i].toUpperCase(), null, null, null});
+                    logicalOp = tokens[i].toUpperCase();
                 } else if (isOperator(tokens[i])) {
-                    conditions.add(new String[] {null, tokens[i-1], tokens[i], tokens[i+1]});
-                    i++;
+                    String column = tokens[i - 1];
+                    String operator = tokens[i];
+                    String value = tokens[i + 1];
+                    conditions.add(new String[] {logicalOp, column, operator, value});
+                    i++; // Skip over the value token
+                    logicalOp = "AND"; // Reset logical operator after use
                 }
             }
         }
 
         return conditions;
     }
+
 
     private String formatResults(List<Map<String, String>> results, List<String> columns) {
         if (results.isEmpty()) {
