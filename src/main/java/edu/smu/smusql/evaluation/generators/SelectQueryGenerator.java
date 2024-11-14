@@ -26,18 +26,18 @@ public class SelectQueryGenerator implements QueryGenerator {
 
     private String generateComplexQuery(String tableName, DataType dataType) {
         return switch (dataType) {
-            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING -> 
-                String.format("SELECT * FROM %s WHERE value LIKE '%%%s%%'", 
-                    tableName, valueGenerator.generateValue(dataType, random.nextInt()).replace("'", ""));
-            case SMALL_INTEGER, LARGE_INTEGER, DECIMAL -> 
-                String.format("SELECT * FROM %s WHERE value >= %d AND value <= %d", 
-                    tableName, dataType.getMin(), dataType.getMin() + (dataType.getMax() - dataType.getMin()) / 2);
-            case BOOLEAN->
-                String.format("SELECT * FROM %s WHERE value = %s", 
-                    tableName, random.nextBoolean());
-            case DATE -> 
-                String.format("SELECT * FROM %s WHERE value >= %s", 
-                    tableName, valueGenerator.generateValue(dataType, random.nextInt()));
+            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
+                    String.format("SELECT * FROM %s WHERE value = '%s'",
+                            tableName, valueGenerator.generateValue(dataType, random.nextInt()).replace("'", ""));
+            case SMALL_INTEGER, LARGE_INTEGER, DECIMAL ->
+                    String.format("SELECT * FROM %s WHERE value >= %d AND value <= %d",
+                            tableName, dataType.getMin(), dataType.getMin() + (dataType.getMax() - dataType.getMin()) / 2);
+            case BOOLEAN ->
+                    String.format("SELECT * FROM %s WHERE value = %s",
+                            tableName, random.nextBoolean());
+            case DATE ->
+                    String.format("SELECT * FROM %s WHERE value >= '%s'",
+                            tableName, valueGenerator.generateDate(random.nextInt()));
         };
     }
 }

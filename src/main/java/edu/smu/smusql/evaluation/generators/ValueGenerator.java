@@ -37,7 +37,7 @@ public class ValueGenerator {
         return sb.toString();
     }
 
-    private String generateDate(int seed) {
+    public String generateDate(int seed) {
         Random seededRandom = new Random(seed);
         Instant now = Instant.now();
         long daysToSubtract = seededRandom.nextInt(365 * 5);

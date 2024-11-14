@@ -70,10 +70,15 @@ public class Evaluator {
 
             TestResults runResults = executeTestRun(implementation, dataType);
             typeResults.add(runResults);
+
+            // Conditional evaluation
+            String tableName = implementation + dataType.name().toLowerCase() + "_test";
+            evaluateConditionalQueries(tableName, dataType, runResults);
         }
 
         results.get(implementation).put(dataType, typeResults);
     }
+
 
     private TestResults executeTestRun(String implementation, DataType dataType) {
         TestResults results = new TestResults();
@@ -143,7 +148,9 @@ public class Evaluator {
 
         // Generate CSV reports with proper exception handling
         try {
+            String baseDir = "evaluation_results";
             generateCSVReports();
+            generateConditionalMetricsCSV(baseDir);  // Add this line to generate the conditional metrics CSV
         } catch (IOException e) {
             System.err.println("Failed to generate CSV reports: " + e.getMessage());
         }
@@ -486,5 +493,85 @@ public class Evaluator {
         System.out.printf("\nMemory Usage:\n");
         System.out.printf("  Average: %.2f MB\n", memStats.getAverage());
         System.out.printf("  Peak: %.2f MB\n", memStats.getMax());
+    }
+
+    private void evaluateConditionalQueries(String tableName, DataType dataType, TestResults results) {
+        for (int i = 0; i < 100; i++) {
+            String conditionType = getConditionType(dataType);  // Capture the condition type
+            String conditionQuery = generateConditionalQuery(tableName, dataType, conditionType);
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(conditionQuery);
+            results.recordLatency(conditionType, System.nanoTime() - start);  // Use conditionType as the key
+        }
+    }
+
+    // Helper method to generate a condition type based on the DataType
+    private String getConditionType(DataType dataType) {
+        switch (dataType) {
+            case SMALL_INTEGER, LARGE_INTEGER -> {
+                return "GREATER_THAN_CONDITION";
+            }
+            case BOOLEAN -> {
+                return "BOOLEAN_CONDITION";
+            }
+            case DATE -> {
+                return "DATE_CONDITION";
+            }
+            default -> {
+                return "UNKNOWN_CONDITION";
+            }
+        }
+    }
+
+    // Modify the generateConditionalQuery method to accept conditionType
+    private String generateConditionalQuery(String tableName, DataType dataType, String conditionType) {
+        String condition;
+        switch (conditionType) {
+            case "GREATER_THAN_CONDITION" -> condition = "value > 50 AND value < 100";
+            case "BOOLEAN_CONDITION" -> condition = "value = true";
+            case "DATE_CONDITION" -> condition = "value > '2022-01-01'";
+            default -> condition = "1=1";  // Fallback if no specific condition type
+        }
+        return String.format("SELECT * FROM %s WHERE %s", tableName, condition);
+    }
+
+    private void generateConditionalMetricsCSV(String baseDir) throws IOException {
+        Path filePath = Paths.get(baseDir, "conditional_metrics.csv");
+
+        try (BufferedWriter writer = Files.newBufferedWriter(filePath)) {
+            // Write header
+            writer.write("Condition,Implementation_DataType,Average_Time_ms,Sample_Count");
+            writer.newLine();
+
+            results.forEach((impl, typeResults) -> {
+                typeResults.forEach((dataType, runResults) -> {
+                    String implDataType = impl + "_" + dataType;
+
+                    // Process each condition's latencies
+                    runResults.forEach(run -> {
+                        run.getOperationLatencies().forEach((conditionType, latencies) -> {  // conditionType is now the key
+                            if (latencies != null && !latencies.isEmpty()) {
+                                double avgLatency = latencies.stream()
+                                        .mapToDouble(l -> l / 1_000_000.0)
+                                        .average()
+                                        .orElse(0.0);
+
+                                try {
+                                    writer.write(String.format("%s,%s,%.3f,%d",
+                                            conditionType,  // Write the actual condition type
+                                            implDataType,
+                                            avgLatency,
+                                            latencies.size()));
+                                    writer.newLine();
+                                } catch (IOException e) {
+                                    throw new RuntimeException("Error writing conditional data", e);
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+        }
     }
 }

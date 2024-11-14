@@ -4,11 +4,11 @@ Implementation Analysis
 
 backwards Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.213 ms
-Complex Operations Avg: 0.541 ms
-Write Performance: 0.110 ms
-Read Performance: 0.478 ms
-Operation Consistency: 0.649 (lower is better)
+Basic Operations Avg: 0.407 ms
+Complex Operations Avg: 0.748 ms
+Write Performance: 0.277 ms
+Read Performance: 0.653 ms
+Operation Consistency: 0.677 (lower is better)
 
 Key Characteristics:
 - Stack-based implementation with batch processing
@@ -16,41 +16,31 @@ Key Characteristics:
 - Efficient for recent data access
 
 
-leaky Implementation:
+chunk Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.171 ms
-Complex Operations Avg: 0.519 ms
-Write Performance: 0.083 ms
-Read Performance: 0.438 ms
-Operation Consistency: 0.656 (lower is better)
-
-Key Characteristics:
-- Two-tier storage with controlled data movement
-- Automatic memory management
-- Efficient for hot data access
+Basic Operations Avg: 0.402 ms
+Complex Operations Avg: 0.778 ms
+Write Performance: 0.272 ms
+Read Performance: 0.666 ms
+Operation Consistency: 0.711 (lower is better)
 
 
-ping Implementation:
+forest Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.170 ms
-Complex Operations Avg: 0.491 ms
-Write Performance: 0.079 ms
-Read Performance: 0.424 ms
-Operation Consistency: 0.629 (lower is better)
-
-Key Characteristics:
-- Dual-list system with frequency-based promotion
-- Adaptive to access patterns
-- Good for mixed workloads
+Basic Operations Avg: 0.037 ms
+Complex Operations Avg: 0.053 ms
+Write Performance: 0.030 ms
+Read Performance: 0.047 ms
+Operation Consistency: 0.257 (lower is better)
 
 
 random Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.155 ms
-Complex Operations Avg: 0.491 ms
-Write Performance: 0.073 ms
-Read Performance: 0.407 ms
-Operation Consistency: 0.629 (lower is better)
+Basic Operations Avg: 0.396 ms
+Complex Operations Avg: 0.725 ms
+Write Performance: 0.268 ms
+Read Performance: 0.633 ms
+Operation Consistency: 0.682 (lower is better)
 
 Key Characteristics:
 - Multiple queue distribution
