@@ -1,25 +1,25 @@
 package edu.smu.smusql.evaluation;
 
 import edu.smu.smusql.Engine;
+import edu.smu.smusql.evaluation.metrics.DataType;
+import edu.smu.smusql.evaluation.metrics.TestResults;
+import edu.smu.smusql.evaluation.generators.ValueGenerator;
+import edu.smu.smusql.evaluation.operations.StandardQueryExecutor;
+import edu.smu.smusql.evaluation.operations.ComplexQueryExecutor;
 
 import java.io.IOException;
 import java.util.*;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.io.BufferedWriter;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
 
 public class Evaluator {
     private final Engine dbEngine;
@@ -28,53 +28,18 @@ public class Evaluator {
     private final int TEST_OPERATIONS = 10000;
     private final MemoryMXBean memoryBean;
     private final Map<String, Map<DataType, List<TestResults>>> results;
+    private final ValueGenerator valueGenerator;
+    private final StandardQueryExecutor standardExecutor;
+    private final ComplexQueryExecutor complexExecutor;
 
     public Evaluator(Engine engine) {
         this.dbEngine = engine;
         this.random = new Random();
         this.memoryBean = ManagementFactory.getMemoryMXBean();
         this.results = new ConcurrentHashMap<>();
-    }
-
-    // Data Types Enumeration
-    public enum DataType {
-        SMALL_STRING(1, 10, "STRING"),
-        MEDIUM_STRING(50, 100, "STRING"),
-        LARGE_STRING(200, 500, "STRING"),
-        SMALL_INTEGER(0, 100, "INTEGER"),
-        LARGE_INTEGER(10000, 1000000, "INTEGER"),
-        DECIMAL(0, 10000, "DECIMAL"),
-        BOOLEAN(0, 1, "BOOLEAN"),
-        DATE(0, 0, "DATE");
-
-        private final int min;
-        private final int max;
-        private final String category;
-
-        DataType(int min, int max, String category) {
-            this.min = min;
-            this.max = max;
-            this.category = category;
-        }
-    }
-
-    // Test Results Class
-    private static class TestResults {
-        Map<String, List<Long>> operationLatencies = new HashMap<>();
-        Map<String, Long> memoryUsage = new HashMap<>();
-        Map<String, Integer> operationCounts = new HashMap<>();
-        long totalDuration;
-        long peakMemoryUsage;
-        
-        void recordLatency(String operation, long latency) {
-            operationLatencies.computeIfAbsent(operation, k -> new ArrayList<>()).add(latency);
-            operationCounts.merge(operation, 1, Integer::sum);
-        }
-
-        void recordMemory(String phase, long memory) {
-            memoryUsage.put(phase, memory);
-            peakMemoryUsage = Math.max(peakMemoryUsage, memory);
-        }
+        this.valueGenerator = new ValueGenerator();
+        this.standardExecutor = new StandardQueryExecutor();
+        this.complexExecutor = new ComplexQueryExecutor();
     }
 
     public void runEvaluation() {
@@ -101,7 +66,6 @@ public class Evaluator {
             
             // Reset state and warm up
             dbEngine.reset();
-//            warmup(implementation, dataType);
             System.gc();
 
             TestResults runResults = executeTestRun(implementation, dataType);
@@ -119,8 +83,7 @@ public class Evaluator {
         long startTime = System.nanoTime();
         MemoryUsage beforeMem = memoryBean.getHeapMemoryUsage();
         
-        createTestTable(tableName);
-        populateTestData(tableName, dataType, results);
+        createAndPopulateTable(tableName, dataType, results);
         
         results.recordMemory("population", 
             memoryBean.getHeapMemoryUsage().getUsed() - beforeMem.getUsed());
@@ -131,17 +94,15 @@ public class Evaluator {
         // Complex queries phase
         executeComplexQueries(tableName, dataType, results);
         
-        results.totalDuration = System.nanoTime() - startTime;
+        results.setTotalDuration(System.nanoTime() - startTime);
         return results;
     }
 
-    private void createTestTable(String tableName) {
+    private void createAndPopulateTable(String tableName, DataType dataType, TestResults results) {
         dbEngine.executeSQL("CREATE TABLE " + tableName + " (id, value)");
-    }
-
-    private void populateTestData(String tableName, DataType dataType, TestResults results) {
+        
         for (int i = 0; i < 1000; i++) {
-            String value = generateValue(dataType, i);
+            String value = valueGenerator.generateValue(dataType, i);
             String query = String.format("INSERT INTO %s VALUES (%d, %s)", 
                 tableName, i, value);
             
@@ -151,179 +112,18 @@ public class Evaluator {
         }
     }
 
-    private void executeRandomOperation(String tableName, DataType dataType, TestResults results) {
-        double op = random.nextDouble();
-        long start = System.nanoTime();
-
-        if (op < 0.4) { // 40% SELECT
-            String query = generateSelectQuery(tableName, dataType);
-            dbEngine.executeSQL(query);
-            results.recordLatency("SELECT", System.nanoTime() - start);
-        } else if (op < 0.7) { // 30% UPDATE
-            String newValue = generateValue(dataType, random.nextInt(1000));
-            String query = String.format("UPDATE %s SET value = %s WHERE id = %d",
-                    tableName, newValue, random.nextInt(1000));
-            dbEngine.executeSQL(query);
-            results.recordLatency("UPDATE", System.nanoTime() - start);
-        } else if (op < 0.9) { // 20% INSERT
-            int id = 1000 + random.nextInt(9000);
-            String value = generateValue(dataType, id);
-            String query = String.format("INSERT INTO %s VALUES (%d, %s)",
-                    tableName, id, value);
-            dbEngine.executeSQL(query);
-            results.recordLatency("INSERT", System.nanoTime() - start);
-        } else { // 10% DELETE
-            String query = String.format("DELETE FROM %s WHERE id = %d",
-                    tableName, random.nextInt(1000));
-            dbEngine.executeSQL(query);
-            results.recordLatency("DELETE", System.nanoTime() - start);
-        }
-    }
-
     private void executeMixedOperations(String tableName, DataType dataType, TestResults results) {
         for (int i = 0; i < TEST_OPERATIONS; i++) {
-            executeRandomOperation(tableName, dataType, results);
+            standardExecutor.executeQuery(tableName, dataType, dbEngine, results);
         }
     }
 
     private void executeComplexQueries(String tableName, DataType dataType, TestResults results) {
         for (int i = 0; i < 100; i++) {
-            // Complex SELECT queries
-            long start = System.nanoTime();
-            String selectQuery = generateComplexQuery(tableName, dataType);
-            dbEngine.executeSQL(selectQuery);
-            results.recordLatency("COMPLEX_SELECT", System.nanoTime() - start);
-
-            // Complex UPDATE queries
-            start = System.nanoTime();
-            String updateQuery = generateComplexUpdateQuery(tableName, dataType);
-            dbEngine.executeSQL(updateQuery);
-            results.recordLatency("COMPLEX_UPDATE", System.nanoTime() - start);
-
-            // Complex DELETE queries
-            start = System.nanoTime();
-            String deleteQuery = generateComplexDeleteQuery(tableName, dataType);
-            dbEngine.executeSQL(deleteQuery);
-            results.recordLatency("COMPLEX_DELETE", System.nanoTime() - start);
+            complexExecutor.executeQuery(tableName, dataType, dbEngine, results);
         }
     }
 
-    private String generateComplexUpdateQuery(String tableName, DataType dataType) {
-        String newValue = generateValue(dataType, random.nextInt());
-        return switch (dataType) {
-            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
-                    String.format("UPDATE %s SET value = %s WHERE value LIKE '%%%s%%'",
-                            tableName, newValue, generateString(1, 5, random.nextInt()));
-            case SMALL_INTEGER, LARGE_INTEGER, DECIMAL ->
-                    String.format("UPDATE %s SET value = %s WHERE value >= %d AND value <= %d",
-                            tableName, newValue, dataType.min, dataType.min + (dataType.max - dataType.min) / 2);
-            case BOOLEAN ->
-                    String.format("UPDATE %s SET value = %s WHERE value = %s",
-                            tableName, newValue, random.nextBoolean());
-            case DATE ->
-                    String.format("UPDATE %s SET value = %s WHERE value >= '%s'",
-                            tableName, newValue, generateDate(random.nextInt()));
-        };
-    }
-
-    private String generateComplexDeleteQuery(String tableName, DataType dataType) {
-        return switch (dataType) {
-            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
-                    String.format("DELETE FROM %s WHERE value LIKE '%%%s%%'",
-                            tableName, generateString(1, 5, random.nextInt()));
-            case SMALL_INTEGER, LARGE_INTEGER, DECIMAL ->
-                    String.format("DELETE FROM %s WHERE value >= %d AND value <= %d",
-                            tableName, dataType.min, dataType.min + (dataType.max - dataType.min) / 2);
-            case BOOLEAN ->
-                    String.format("DELETE FROM %s WHERE value = %s",
-                            tableName, random.nextBoolean());
-            case DATE ->
-                    String.format("DELETE FROM %s WHERE value >= '%s'",
-                            tableName, generateDate(random.nextInt()));
-        };
-    }
-
-    private void executeSelect(String tableName, DataType dataType) {
-        String query = generateSelectQuery(tableName, dataType);
-        dbEngine.executeSQL(query);
-    }
-
-    private void executeUpdate(String tableName, DataType dataType) {
-        String newValue = generateValue(dataType, random.nextInt(1000));
-        String query = String.format("UPDATE %s SET value = %s WHERE id = %d",
-            tableName, newValue, random.nextInt(1000));
-        dbEngine.executeSQL(query);
-    }
-
-    private void executeInsert(String tableName, DataType dataType) {
-        int id = 1000 + random.nextInt(9000);
-        String value = generateValue(dataType, id);
-        String query = String.format("INSERT INTO %s VALUES (%d, %s)",
-            tableName, id, value);
-        dbEngine.executeSQL(query);
-    }
-
-    private void executeDelete(String tableName, DataType dataType) {
-        String query = String.format("DELETE FROM %s WHERE id = %d",
-            tableName, random.nextInt(1000));
-        dbEngine.executeSQL(query);
-    }
-
-    private String generateValue(DataType type, int seed) {
-        return switch (type) {
-            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING -> 
-                "'" + generateString(type.min, type.max, seed) + "'";
-            case SMALL_INTEGER, LARGE_INTEGER -> 
-                String.valueOf(random.nextInt(type.max - type.min) + type.min);
-            case DECIMAL -> 
-                String.format("%.2f", random.nextDouble() * type.max);
-            case BOOLEAN -> 
-                String.valueOf(random.nextBoolean());
-            case DATE -> 
-                "'" + generateDate(seed) + "'";
-        };
-    }
-
-    private String generateString(int minLength, int maxLength, int seed) {
-        int length = random.nextInt(maxLength - minLength) + minLength;
-        Random seededRandom = new Random(seed); // Deterministic for same seed
-        StringBuilder sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++) {
-            sb.append((char) (seededRandom.nextInt(26) + 'a'));
-        }
-        return sb.toString();
-    }
-
-    private String generateDate(int seed) {
-        Random seededRandom = new Random(seed);
-        Instant now = Instant.now();
-        long daysToSubtract = seededRandom.nextInt(365 * 5); // 5 years range
-        return now.minus(daysToSubtract, ChronoUnit.DAYS).toString();
-    }
-
-    private String generateSelectQuery(String tableName, DataType dataType) {
-        if (random.nextDouble() < 0.3) { // 30% chance of complex query
-            return generateComplexQuery(tableName, dataType);
-        }
-        return "SELECT * FROM " + tableName + " WHERE id = " + random.nextInt(1000);
-    }
-
-    private String generateComplexQuery(String tableName, DataType dataType) {
-        return switch (dataType) {
-            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING -> 
-                String.format("SELECT * FROM %s WHERE value LIKE '%%%s%%'", 
-                    tableName, generateString(1, 5, random.nextInt()));
-            case SMALL_INTEGER, LARGE_INTEGER, DECIMAL -> 
-                String.format("SELECT * FROM %s WHERE value >= %d AND value <= %d", 
-                    tableName, dataType.min, dataType.min + (dataType.max - dataType.min) / 2);
-            case BOOLEAN -> 
-                String.format("SELECT * FROM %s WHERE value = %s", 
-                    tableName, random.nextBoolean());
-            case DATE -> 
-                String.format("SELECT * FROM %s WHERE value >= '%s'", 
-                    tableName, generateDate(random.nextInt()));
-        };
-    }
     private void generateReport() {
         // Console output first
         System.out.println("\nDetailed Performance Report");
@@ -386,7 +186,7 @@ public class Evaluator {
 
                 // Process operation latencies
                 runResults.forEach(run -> {
-                    run.operationLatencies.forEach((operation, latencies) -> {
+                    run.getOperationLatencies().forEach((operation, latencies) -> {
                         double avgLatency = latencies.stream()
                                 .mapToDouble(l -> l / 1_000_000.0)
                                 .average()
@@ -407,7 +207,7 @@ public class Evaluator {
 
                 // Process memory usage
                 DoubleSummaryStatistics memStats = runResults.stream()
-                        .mapToDouble(r -> r.peakMemoryUsage / (1024.0 * 1024.0))
+                        .mapToDouble(r -> r.getPeakMemoryUsage() / (1024.0 * 1024.0))
                         .summaryStatistics();
 
                 try {
@@ -443,7 +243,7 @@ public class Evaluator {
         results.values().forEach(typeResults ->
                 typeResults.values().forEach(runResults ->
                         runResults.forEach(run ->
-                                operations.addAll(run.operationLatencies.keySet()))));
+                                operations.addAll(run.getOperationLatencies().keySet()))));
 
         for (String operation : operations) {
             Map<String, Double> implPerformance = new HashMap<>();
@@ -452,7 +252,7 @@ public class Evaluator {
                 typeResults.forEach((dataType, runResults) -> {
                     String implDataType = impl + "_" + dataType;
                     double avgLatency = runResults.stream()
-                            .flatMap(run -> run.operationLatencies.getOrDefault(operation, new ArrayList<>()).stream())
+                            .flatMap(run -> run.getOperationLatencies().getOrDefault(operation, new ArrayList<>()).stream())
                             .mapToDouble(l -> l / 1_000_000.0)
                             .average()
                             .orElse(Double.MAX_VALUE);
@@ -484,7 +284,7 @@ public class Evaluator {
         results.forEach((impl, typeResults) -> {
             typeResults.forEach((dataType, runResults) -> {
                 DoubleSummaryStatistics memStats = runResults.stream()
-                        .mapToDouble(r -> r.peakMemoryUsage / (1024.0 * 1024.0))
+                        .mapToDouble(r -> r.getPeakMemoryUsage() / (1024.0 * 1024.0))
                         .summaryStatistics();
 
                 try {
@@ -516,7 +316,7 @@ public class Evaluator {
         results.forEach((impl, typeResults) -> {
             typeResults.forEach((dataType, runResults) -> {
                 runResults.forEach(run -> {
-                    run.operationLatencies.forEach((op, latencies) -> {
+                    run.getOperationLatencies().forEach((op, latencies) -> {
                         String key = impl + "_" + dataType;
                         operationStats.computeIfAbsent(op, k -> new HashMap<>())
                                 .computeIfAbsent(key, k -> new DoubleSummaryStatistics())
@@ -529,7 +329,7 @@ public class Evaluator {
                     String key = impl + "_" + dataType;
                     memoryStats.computeIfAbsent("MEMORY", k -> new HashMap<>())
                             .computeIfAbsent(key, k -> new DoubleSummaryStatistics())
-                            .accept(run.peakMemoryUsage / (1024.0 * 1024.0));
+                            .accept(run.getPeakMemoryUsage() / (1024.0 * 1024.0));
                 });
             });
         });
@@ -663,7 +463,7 @@ public class Evaluator {
         // Calculate and print average latencies
         Map<String, List<Long>> allLatencies = new HashMap<>();
         runResults.forEach(run -> 
-            run.operationLatencies.forEach((op, latencies) -> 
+            run.getOperationLatencies().forEach((op, latencies) -> 
                 allLatencies.computeIfAbsent(op, k -> new ArrayList<>()).addAll(latencies)));
 
         allLatencies.forEach((op, latencies) -> {
@@ -680,7 +480,7 @@ public class Evaluator {
 
         // Calculate and print memory statistics
         DoubleSummaryStatistics memStats = runResults.stream()
-            .mapToDouble(r -> r.peakMemoryUsage / (1024.0 * 1024.0)) // Convert to MB
+            .mapToDouble(r -> r.getPeakMemoryUsage() / (1024.0 * 1024.0)) // Convert to MB
             .summaryStatistics();
         
         System.out.printf("\nMemory Usage:\n");
