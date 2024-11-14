@@ -43,7 +43,7 @@ public class Evaluator {
     }
 
     public void runEvaluation() {
-        String[] implementations = {"backwards_", "leaky_", "ping_", "random_"};
+        String[] implementations = {"backwards_", "chunk_", "forest_", "random_"};
 
         for (String impl : implementations) {
             System.out.println("\nEvaluating implementation: " + impl);
@@ -63,7 +63,7 @@ public class Evaluator {
 
         for (int run = 0; run < NUMBER_OF_RUNS; run++) {
             System.out.println("Run " + (run + 1) + "/" + NUMBER_OF_RUNS);
-            
+
             // Reset state and warm up
             dbEngine.reset();
             System.gc();
@@ -78,34 +78,34 @@ public class Evaluator {
     private TestResults executeTestRun(String implementation, DataType dataType) {
         TestResults results = new TestResults();
         String tableName = implementation + dataType.name().toLowerCase() + "_test";
-        
+
         // Initial table creation and population
         long startTime = System.nanoTime();
         MemoryUsage beforeMem = memoryBean.getHeapMemoryUsage();
-        
+
         createAndPopulateTable(tableName, dataType, results);
-        
-        results.recordMemory("population", 
+
+        results.recordMemory("population",
             memoryBean.getHeapMemoryUsage().getUsed() - beforeMem.getUsed());
 
         // Mixed operations phase
         executeMixedOperations(tableName, dataType, results);
-        
+
         // Complex queries phase
         executeComplexQueries(tableName, dataType, results);
-        
+
         results.setTotalDuration(System.nanoTime() - startTime);
         return results;
     }
 
     private void createAndPopulateTable(String tableName, DataType dataType, TestResults results) {
         dbEngine.executeSQL("CREATE TABLE " + tableName + " (id, value)");
-        
+
         for (int i = 0; i < 1000; i++) {
             String value = valueGenerator.generateValue(dataType, i);
-            String query = String.format("INSERT INTO %s VALUES (%d, %s)", 
+            String query = String.format("INSERT INTO %s VALUES (%d, %s)",
                 tableName, i, value);
-            
+
             long start = System.nanoTime();
             dbEngine.executeSQL(query);
             results.recordLatency("INSERT", System.nanoTime() - start);
@@ -462,15 +462,15 @@ public class Evaluator {
     private void printTypeStatistics(List<TestResults> runResults) {
         // Calculate and print average latencies
         Map<String, List<Long>> allLatencies = new HashMap<>();
-        runResults.forEach(run -> 
-            run.getOperationLatencies().forEach((op, latencies) -> 
+        runResults.forEach(run ->
+            run.getOperationLatencies().forEach((op, latencies) ->
                 allLatencies.computeIfAbsent(op, k -> new ArrayList<>()).addAll(latencies)));
 
         allLatencies.forEach((op, latencies) -> {
             DoubleSummaryStatistics stats = latencies.stream()
                 .mapToDouble(l -> l / 1_000_000.0) // Convert to ms
                 .summaryStatistics();
-            
+
             System.out.printf("\n%s Operations:\n", op);
             System.out.printf("  Average: %.3f ms\n", stats.getAverage());
             System.out.printf("  Min: %.3f ms\n", stats.getMin());
@@ -482,7 +482,7 @@ public class Evaluator {
         DoubleSummaryStatistics memStats = runResults.stream()
             .mapToDouble(r -> r.getPeakMemoryUsage() / (1024.0 * 1024.0)) // Convert to MB
             .summaryStatistics();
-        
+
         System.out.printf("\nMemory Usage:\n");
         System.out.printf("  Average: %.2f MB\n", memStats.getAverage());
         System.out.printf("  Peak: %.2f MB\n", memStats.getMax());

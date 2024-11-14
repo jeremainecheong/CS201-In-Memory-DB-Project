@@ -61,7 +61,7 @@ public class Main {
         
         // Print evaluation details
         System.out.println("\nEvaluation will test:");
-        System.out.println("- 4 implementations (BackwardsStack, LeakyBucket, PingPong, RandomQueue)");
+        System.out.println("- 4 implementations (BackwardsStack, Chunk, ForestMap, RandomQueue)");
         System.out.println("- 8 data types (varying string lengths, integers, decimals, etc.)");
         System.out.println("- Multiple operations (INSERT, SELECT, UPDATE, DELETE)");
         System.out.println("- Memory usage and operation latencies");

@@ -1,11 +1,7 @@
 package edu.smu.smusql;
 
 import edu.smu.smusql.storage.Table;
-import edu.smu.smusql.storage.impl.BackwardsStackTable;
-import edu.smu.smusql.storage.impl.LeakyBucketTable;
-import edu.smu.smusql.storage.impl.PingPongTable;
-import edu.smu.smusql.storage.impl.RandomQueueTable;
-import edu.smu.smusql.storage.impl.ForestMapTable;
+import edu.smu.smusql.storage.impl.*;
 
 import java.util.*;
 
@@ -53,32 +49,29 @@ public class Engine {
             return "ERROR: Table '" + tableName + "' already exists";
         }
 
-        // Find the opening and closing parentheses
-        String columnsString = "";
+        // Extract columns inside parentheses
+        StringBuilder columnsString = new StringBuilder();
         boolean foundOpenParen = false;
         for (int i = 3; i < tokens.length; i++) {
-            String token = tokens[i];
+            String token = tokens[i].trim(); // Trim each token
             if (token.startsWith("(")) {
                 foundOpenParen = true;
-                columnsString = token.substring(1);  // Remove opening parenthesis
+                columnsString.append(token.substring(1)).append(" "); // Remove '('
+            } else if (token.endsWith(")")) {
+                columnsString.append(token, 0, token.length() - 1); // Remove ')'
+                break;
             } else if (foundOpenParen) {
-                if (token.endsWith(")")) {
-                    // Remove closing parenthesis and add the last token
-                    columnsString += " " + token.substring(0, token.length() - 1);
-                    break;
-                } else {
-                    columnsString += " " + token;
-                }
+                columnsString.append(token).append(" ");
             }
         }
 
-        if (columnsString.isEmpty()) {
+        if (!foundOpenParen || columnsString.length() == 0) {
             return "ERROR: No columns specified";
         }
 
-        // Split the columns string and clean up each column name
+        // Split columns and clean up names
         List<String> columns = new ArrayList<>();
-        for (String col : columnsString.split(",")) {
+        for (String col : columnsString.toString().split(",")) {
             String cleanCol = col.trim();
             if (!cleanCol.isEmpty()) {
                 columns.add(cleanCol);
@@ -89,21 +82,17 @@ public class Engine {
             return "ERROR: No valid columns specified";
         }
 
-        // Create table with specific implementation
+        // Create the table with the correct implementation
         Table table;
         String implName;
         String prefix = tableName.toLowerCase();
 
-        // Use explicit prefix checks for evaluation framework
         if (prefix.startsWith("backwards_")) {
             table = new BackwardsStackTable(columns);
             implName = "BackwardsStack";
         } else if (prefix.startsWith("ping_")) {
             table = new PingPongTable(columns);
             implName = "PingPong";
-        } else if (prefix.startsWith("random_")) {
-            table = new RandomQueueTable(columns);
-            implName = "RandomQueue";
         } else if (prefix.startsWith("leaky_")) {
             table = new LeakyBucketTable(columns);
             implName = "LeakyBucket";
@@ -111,14 +100,14 @@ public class Engine {
             table = new ForestMapTable(columns);
             implName = "ForestMap";
         } else {
-            // Default to LeakyBucket for unspecified implementations
-            table = new LeakyBucketTable(columns);
-            implName = "LeakyBucket";
+            table = new ChunkTable(columns);
+            implName = "ChunkTable";
         }
 
         tables.put(tableName, table);
         return "Table '" + tableName + "' created with " + implName + " implementation";
     }
+
 
     /**
      * Inserts a row into a table
@@ -135,29 +124,33 @@ public class Engine {
                 return "ERROR: Table '" + tableName + "' does not exist";
             }
 
-            // Extract values
+            // Extract values inside parentheses
             StringBuilder valuesStr = new StringBuilder();
             boolean inParens = false;
             for (int i = 4; i < tokens.length; i++) {
-                String token = tokens[i];
+                String token = tokens[i].trim(); // Trim each token
                 if (token.startsWith("(")) {
                     inParens = true;
-                    valuesStr.append(token.substring(1)).append(" ");
+                    valuesStr.append(token.substring(1)).append(" "); // Remove '('
                 } else if (token.endsWith(")")) {
-                    valuesStr.append(token.substring(0, token.length() - 1));
+                    valuesStr.append(token, 0, token.length() - 1); // Remove ')'
                     break;
                 } else if (inParens) {
                     valuesStr.append(token).append(" ");
                 }
             }
 
-            if (!inParens) {
+            if (!inParens || valuesStr.length() == 0) {
                 return "ERROR: Invalid INSERT syntax - missing values";
             }
 
+            // Split values and clean up
             List<String> values = new ArrayList<>();
             for (String value : valuesStr.toString().split(",")) {
-                values.add(value.trim());
+                String cleanValue = value.trim();
+                if (!cleanValue.isEmpty()) {
+                    values.add(cleanValue);
+                }
             }
 
             if (values.size() != table.getColumns().size()) {
@@ -170,6 +163,7 @@ public class Engine {
             return "ERROR: Insert failed - " + e.getMessage();
         }
     }
+
 
     /**
      * Executes a SELECT query

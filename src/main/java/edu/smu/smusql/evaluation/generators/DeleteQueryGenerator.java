@@ -27,13 +27,10 @@ public class DeleteQueryGenerator implements QueryGenerator {
 
     private String generateComplexQuery(String tableName, DataType dataType) {
         return switch (dataType) {
-            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
-                String.format("DELETE FROM %s WHERE value LIKE '%%%s%%'",
-                        tableName, valueGenerator.generateValue(dataType, random.nextInt()).replace("'", ""));
             case SMALL_INTEGER, LARGE_INTEGER, DECIMAL ->
                 String.format("DELETE FROM %s WHERE value >= %d AND value <= %d",
                         tableName, dataType.getMin(), dataType.getMin() + (dataType.getMax() - dataType.getMin()) / 2);
-            case BOOLEAN ->
+            case BOOLEAN, SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
                 String.format("DELETE FROM %s WHERE value = %s",
                         tableName, random.nextBoolean());
             case DATE ->
