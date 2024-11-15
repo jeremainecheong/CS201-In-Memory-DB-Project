@@ -15,14 +15,6 @@ public class LFUTable implements Table {
     private int minFrequency;
     private int size;
     
-    // private class CacheNode {
-    //     DataType[] data;
-        
-    //     CacheNode(DataType[] data) {
-    //         this.data = data;
-    //     }
-    // }
-    
     public LFUTable(List<String> columns) {
         this.columnNames = new ArrayList<>(columns);
         this.cache = new HashMap<>();
