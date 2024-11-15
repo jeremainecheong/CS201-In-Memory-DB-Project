@@ -18,7 +18,11 @@ def analyze_scalability(file_path='scalability_test_results.csv'):
         return
 
     # Convert metrics to numeric, matching the exact column names in the CSV
-    metrics = ['TotalTime(ms)', 'AvgTimePerOp(ms)', 'MinLatency(ms)', 'MaxLatency(ms)', '50thPercentile(ms)', '90thPercentile(ms)']
+    metrics = [
+        'TotalTime(ms)', 'AvgTimePerOp(ms)', 'MinLatency(ms)', 
+        'MaxLatency(ms)', '50thPercentile(ms)', '90thPercentile(ms)', 
+        'MemoryOverhead(MB)'
+    ]
     for metric in metrics:
         df[metric] = pd.to_numeric(df[metric], errors='coerce')
 
@@ -28,6 +32,8 @@ def analyze_scalability(file_path='scalability_test_results.csv'):
     plot_avg_time_per_op(df)
     # Compare latencies across implementations at 50th and 90th percentiles
     plot_percentiles(df)
+    # Plot memory usage
+    plot_memory_usage(df)
     # Generate a summary of performance across implementations
     print_summary_statistics(df)
 
@@ -36,7 +42,8 @@ def analyze_scalability(file_path='scalability_test_results.csv'):
     print("1. scalability_total_time.png - Total time taken by each implementation across row counts")
     print("2. scalability_avg_time_per_op.png - Average latency per operation across implementations")
     print("3. scalability_percentiles.png - 50th and 90th percentile latencies")
-    print("4. scalability_summary.txt - Summary of best implementations per row count")
+    print("4. scalability_memory_usage.png - Memory usage across implementations")
+    print("5. scalability_summary.txt - Summary of best implementations per row count")
 
 def plot_total_time(df):
     print("Creating total time plot for scalability...")
@@ -80,6 +87,18 @@ def plot_percentiles(df):
     plt.savefig('scalability_percentiles.png')
     plt.close()
 
+def plot_memory_usage(df):
+    print("Creating memory usage plot...")
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(data=df, x='RowCount', y='MemoryOverhead(MB)', hue='Implementation', marker='o')
+    plt.title('Memory Overhead by Implementation')
+    plt.xlabel('Rows Tested')
+    plt.ylabel('Memory Overhead (MB)')
+    plt.legend(title='Implementation')
+    plt.tight_layout()
+    plt.savefig('scalability_memory_usage.png')
+    plt.close()
+
 def print_summary_statistics(df):
     print("\nSUMMARY STATISTICS")
     print("=" * 50)
@@ -89,6 +108,8 @@ def print_summary_statistics(df):
     print("-" * 40)
 
     row_counts = sorted(df['RowCount'].unique())
+    summary_lines = []
+
     with open('scalability_summary.txt', 'w') as f:
         f.write("Scalability Test Summary\n")
         f.write("=" * 50 + "\n\n")
@@ -100,6 +121,24 @@ def print_summary_statistics(df):
             summary_line = f"Rows: {row_count} - Best Implementation: {best_impl['Implementation']} ({best_impl['AvgTimePerOp(ms)']:.3f} ms)\n"
             print(summary_line.strip())
             f.write(summary_line)
+            summary_lines.append(summary_line)
+
+        # Memory usage summary
+        f.write("\n\nMemory Usage Summary:\n")
+        f.write("-" * 40 + "\n")
+
+        if 'MemoryOverhead(MB)' in df.columns:
+            memory_summary = df.groupby('Implementation')['MemoryOverhead(MB)'].mean()
+            for impl, avg_mem in memory_summary.items():
+                mem_line = f"{impl}: Average Memory Overhead: {avg_mem:.2f} MB\n"
+                print(mem_line.strip())
+                f.write(mem_line)
+                summary_lines.append(mem_line)
+        else:
+            no_memory_data = "Memory usage data is not available in the dataset.\n"
+            print(no_memory_data.strip())
+            f.write(no_memory_data)
+            summary_lines.append(no_memory_data)
 
 def main():
     try:

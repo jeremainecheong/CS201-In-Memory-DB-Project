@@ -12,7 +12,9 @@ import java.util.*;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
+import java.lang.management.MemoryPoolMXBean;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -45,8 +47,9 @@ public class Evaluator {
     }
 
     public void runEvaluation(Scanner scanner) {
-        String[] implementations = { "backwards_", "chunk_", "forest_", "random_" };
-
+        // String[] implementations = { "backwards_", "chunk_", "forest_", "random_",
+        // "lfu_" };
+        String[] implementations = { "forest_", "chunk_", "lfu_" };
         System.out.println("\nSkip to scalability tests? (y/n)");
         System.out.flush();
         String r1 = scanner.nextLine().trim().toLowerCase();
@@ -151,37 +154,42 @@ public class Evaluator {
     public void testScalability() {
         System.out.println("\nStarting scalability test");
         int[] rowCounts = { 100, 1000, 10000, 30000 };
-        String[] implementations = { "backwards_", "chunk_", "forest_", "random_" };
+        String[] implementations = { "forest_", "chunk_", "lfu_" };
 
         for (String impl : implementations) {
-            System.out.println("\nEvaluating scalability for : " + impl);
+            System.out.println("\nEvaluating scalability for: " + impl);
 
             for (int rowCount : rowCounts) {
                 System.out.println("\nTesting " + impl + " with " + rowCount + " rows");
 
                 dbEngine.reset();
-                System.gc();
+                System.gc(); // Optional: trigger GC to reduce "before" memory noise
 
+                // Record initial memory usage and start time
                 long startTime = System.nanoTime();
-                MemoryUsage beforeMem = memoryBean.getHeapMemoryUsage();
+                MemoryUsage initialMemoryUsage = memoryBean.getHeapMemoryUsage();
 
-                // Populate table with n rows
+                // Populate table with the specified number of rows
                 String tableName = impl + "scalability_test";
                 populateTableForScalability(tableName, rowCount);
 
-                MemoryUsage afterMem = memoryBean.getHeapMemoryUsage();
-
-                double memoryUsed = (afterMem.getUsed() - beforeMem.getUsed()) / (1024.0 * 1024.0);
+                // Record memory usage after population phase
+                MemoryUsage postPopulationMemoryUsage = memoryBean.getHeapMemoryUsage();
+                double memoryOverhead = (postPopulationMemoryUsage.getUsed() - initialMemoryUsage.getUsed())
+                        / (1024.0 * 1024.0); // Convert to MB
                 double timeTakenSeconds = (System.nanoTime() - startTime) / 1_000_000.0;
 
-                System.out.printf("===Population phase===\n");
-                System.out.printf("Rows: %d, Time Taken: %.3f seconds, Memory used: %.2f MB\n", rowCount,
-                        timeTakenSeconds, memoryUsed);
-                System.out.println("===Mixed Operations Phase===");
-                testOperationsForScale(tableName, rowCount, impl);
+                System.out.printf("=== Population Phase ===\n");
+                System.out.printf("Rows: %d, Time Taken: %.3f ms, Memory used: %.2f MB\n", rowCount, timeTakenSeconds,
+                        memoryOverhead);
+
+                // Run mixed operations and measure performance metrics
+                System.out.println("=== Mixed Operations Phase ===");
+                testOperationsForScale(tableName, rowCount, impl, memoryOverhead);
             }
         }
 
+        // Export results to CSV
         exportScalabilityResultsToCSV("evaluation_results/scalability_test_results.csv");
     }
 
@@ -195,7 +203,8 @@ public class Evaluator {
     }
 
     // Method to test scalability, print table, and store results for CSV export
-    private void testOperationsForScale(String tableName, int rowCount, String implementation) {
+    private void testOperationsForScale(String tableName, int rowCount, String implementation,
+            double initialMemoryOverhead) {
         long totalLatency = 0; // Sum of all latencies
         long maxLatency = Long.MIN_VALUE; // Maximum latency
         long minLatency = Long.MAX_VALUE; // Minimum latency
@@ -203,6 +212,10 @@ public class Evaluator {
 
         TestResults results = new TestResults();
         List<Long> latencySamples = new ArrayList<>();
+
+        // Measure memory at start of mixed operations phase
+        MemoryUsage beforeMixedOpsMemory = memoryBean.getHeapMemoryUsage();
+        long initialMemoryUsed = beforeMixedOpsMemory.getUsed();
 
         // Execute operations and calculate metrics dynamically
         for (int i = 0; i < rowCount; i++) {
@@ -220,6 +233,17 @@ public class Evaluator {
             count++;
         }
 
+        // Measure memory after mixed operations phase
+        MemoryUsage afterMixedOpsMemory = memoryBean.getHeapMemoryUsage();
+        double memoryOverhead = (afterMixedOpsMemory.getUsed() - initialMemoryUsed) / (1024.0 * 1024.0); // Convert to
+                                                                                                         // MB
+
+        // If memory overhead is negative, fall back to initial memory overhead as an
+        // approximation
+        if (memoryOverhead < 0) {
+            memoryOverhead = initialMemoryOverhead;
+        }
+
         long avgLatency = totalLatency / count;
         long percentile50 = (long) calculatePercentile(latencySamples, 50);
         long percentile90 = (long) calculatePercentile(latencySamples, 90);
@@ -233,7 +257,7 @@ public class Evaluator {
 
         // Print results in a table format
         printTable(implementation, rowCount, totalLatency, avgLatency, minLatency, maxLatency, percentile50,
-                percentile90, count);
+                percentile90, memoryOverhead, count);
 
         // Add results to the scalabilityResults list for CSV export
         scalabilityResults.add(new String[] {
@@ -244,7 +268,8 @@ public class Evaluator {
                 String.format("%.3f", minLatency / 1_000_000.0),
                 String.format("%.3f", maxLatency / 1_000_000.0),
                 String.format("%.3f", percentile50 / 1_000_000.0),
-                String.format("%.3f", percentile90 / 1_000_000.0)
+                String.format("%.3f", percentile90 / 1_000_000.0),
+                String.format("%.2f", memoryOverhead) // Add memory overhead in MB
         });
     }
 
@@ -259,12 +284,13 @@ public class Evaluator {
     }
 
     private void printTable(String implementation, int rowCount, long totalLatency, long avgLatency,
-            long minLatency, long maxLatency, long percentile50, long percentile90, int count) {
+            long minLatency, long maxLatency, long percentile50, long percentile90, double memoryOverhead, int count) {
         System.out.println("\n+--------------------------------------------------+");
         System.out.printf("| %-48s |\n", "Scalability Test Results");
         System.out.println("+--------------------------------------------------+");
         System.out.printf("| %-18s : %-27s |\n", "Implementation", implementation);
         System.out.printf("| %-18s : %-27d |\n", "Rows Tested", rowCount);
+        System.out.printf("| %-18s : %-27.2f MB |\n", "Memory Overhead", memoryOverhead);
         System.out.println("+--------------------------------------------------+");
         System.out.printf("| %-20s | %-15s |\n", "Metric", "Value (ms)");
         System.out.println("+----------------------+-----------------+");
@@ -282,7 +308,7 @@ public class Evaluator {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath))) {
             // Write header
             writer.write(
-                    "Implementation,RowCount,TotalTime(ms),AvgTimePerOp(ms),MinLatency(ms),MaxLatency(ms),50thPercentile(ms),90thPercentile(ms)");
+                    "Implementation,RowCount,TotalTime(ms),AvgTimePerOp(ms),MinLatency(ms),MaxLatency(ms),50thPercentile(ms),90thPercentile(ms),MemoryOverhead(MB)");
             writer.newLine();
 
             // Write each row of results
@@ -699,7 +725,6 @@ public class Evaluator {
         }
         return String.format("SELECT * FROM %s WHERE %s", tableName, condition);
     }
-
 
     private void generateConditionalMetricsCSV(String baseDir) throws IOException {
         Path filePath = Paths.get(baseDir, "conditional_metrics.csv");

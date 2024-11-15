@@ -61,10 +61,11 @@ public class Main {
 
         // Print evaluation details
         System.out.println("\nEvaluation will test:");
-        System.out.println("- 4 implementations (BackwardsStack, Chunk, ForestMap, RandomQueue)");
+        System.out.println("- 3 implementations (ForestMap, Chunk, LFUTable)");
         System.out.println("- 8 data types (varying string lengths, integers, decimals, etc.)");
         System.out.println("- Multiple operations (INSERT, SELECT, UPDATE, DELETE)");
         System.out.println("- Memory usage and operation latencies");
+        System.out.println("- An optional scalability test (100, 1000, 10000, 30000 rows)");
 
         // Ask for confirmation
         System.out.print("\nThis evaluation will take several minutes. Continue? (y/n): ");
