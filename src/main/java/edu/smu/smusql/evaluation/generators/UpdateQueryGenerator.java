@@ -30,16 +30,16 @@ public class UpdateQueryGenerator implements QueryGenerator {
         String newValue = valueGenerator.generateValue(dataType, random.nextInt());
         return switch (dataType) {
             case SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
-                    String.format("UPDATE %s SET value = %s WHERE value = '%s'",
-                            tableName, newValue, valueGenerator.generateValue(dataType, random.nextInt()).replace("'", ""));
+                    String.format("UPDATE %s SET value = '%s' WHERE value = '%s'",
+                            tableName, newValue.replace("'", ""), valueGenerator.generateValue(dataType, random.nextInt()).replace("'", ""));
             case SMALL_INTEGER, LARGE_INTEGER, DECIMAL ->
                     String.format("UPDATE %s SET value = %s WHERE value >= %d AND value <= %d",
                             tableName, newValue, dataType.getMin(), dataType.getMin() + (dataType.getMax() - dataType.getMin()) / 2);
             case BOOLEAN ->
-                    String.format("UPDATE %s SET value = %s WHERE value = %s",
+                    String.format("UPDATE %s SET value = '%s' WHERE value = '%s'",
                             tableName, newValue, random.nextBoolean());
             case DATE ->
-                    String.format("UPDATE %s SET value = %s WHERE value >= '%s'",
+                    String.format("UPDATE %s SET value = '%s' WHERE value >= '%s'",
                             tableName, newValue, valueGenerator.generateDate(random.nextInt()));
         };
     }

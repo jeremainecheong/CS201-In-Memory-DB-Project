@@ -14,20 +14,21 @@ public class ValueGenerator {
 
     public String generateValue(DataType type, int seed) {
         return switch (type) {
-            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING -> 
-                "'" + generateString(type.getMin(), type.getMax(), seed) + "'";
-            case SMALL_INTEGER, LARGE_INTEGER -> 
-                String.valueOf(random.nextInt(type.getMax() - type.getMin()) + type.getMin());
-            case DECIMAL -> 
-                String.format("%.2f", random.nextDouble() * type.getMax());
-            case BOOLEAN -> 
-                String.valueOf(random.nextBoolean());
-            case DATE -> 
-                "'" + generateDate(seed) + "'";
+            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
+                    "'" + generateString(type.getMin(), type.getMax(), seed) + "'";
+            case SMALL_INTEGER, LARGE_INTEGER ->
+                    String.valueOf(random.nextInt(type.getMax() - type.getMin()) + type.getMin());
+            case DECIMAL ->
+                    String.format("%.2f", random.nextDouble() * type.getMax());
+            case BOOLEAN ->
+                    "'" + random.nextBoolean() + "'";  // Wrap boolean in single quotes
+            case DATE ->
+                    "'" + generateDate(seed) + "'";    // Wrap date in single quotes
         };
     }
 
-    private String generateString(int minLength, int maxLength, int seed) {
+
+    public String generateString(int minLength, int maxLength, int seed) {
         int length = random.nextInt(maxLength - minLength) + minLength;
         Random seededRandom = new Random(seed);
         StringBuilder sb = new StringBuilder(length);

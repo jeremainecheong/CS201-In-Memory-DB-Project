@@ -15,6 +15,7 @@ import java.lang.management.MemoryUsage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -31,6 +32,7 @@ public class Evaluator {
     private final ValueGenerator valueGenerator;
     private final StandardQueryExecutor standardExecutor;
     private final ComplexQueryExecutor complexExecutor;
+    private final List<String[]> scalabilityResults = new ArrayList<>();
 
     public Evaluator(Engine engine) {
         this.dbEngine = engine;
@@ -42,19 +44,37 @@ public class Evaluator {
         this.complexExecutor = new ComplexQueryExecutor();
     }
 
-    public void runEvaluation() {
-        String[] implementations = {"backwards_", "chunk_", "forest_", "random_"};
+    public void runEvaluation(Scanner scanner) {
+        String[] implementations = { "backwards_", "chunk_", "forest_", "random_" };
 
-        for (String impl : implementations) {
-            System.out.println("\nEvaluating implementation: " + impl);
-            results.put(impl, new EnumMap<>(DataType.class));
+        System.out.println("\nSkip to scalability tests? (y/n)");
+        System.out.flush();
+        String r1 = scanner.nextLine().trim().toLowerCase();
+        if (r1.equals("n") || r1.equals("no")) {
+            // System.out.println("Starting Comprehensive Performance Evaluation");
+            for (String impl : implementations) {
+                System.out.println("\nEvaluating implementation: " + impl);
+                results.put(impl, new EnumMap<>(DataType.class));
 
-            for (DataType type : DataType.values()) {
-                evaluateImplementationWithDataType(impl, type);
+                for (DataType type : DataType.values()) {
+                    evaluateImplementationWithDataType(impl, type);
+                }
             }
+            generateReport();
+        } else {
+            System.out.println("Skipping to scalability tests");
         }
 
-        generateReport();
+        System.out.println("\n--- Scalability Tests ---");
+        System.out.println("\nScalability tests might take some time. Do you want to run them? (y/n)");
+        System.out.flush();
+        String r2 = scanner.nextLine().trim().toLowerCase();
+
+        if (r2.equals("y") || r2.equals("yes")) {
+            testScalability();
+        } else {
+            System.out.println("Skipping scalability tests");
+        }
     }
 
     private void evaluateImplementationWithDataType(String implementation, DataType dataType) {
@@ -79,7 +99,6 @@ public class Evaluator {
         results.get(implementation).put(dataType, typeResults);
     }
 
-
     private TestResults executeTestRun(String implementation, DataType dataType) {
         TestResults results = new TestResults();
         String tableName = implementation + dataType.name().toLowerCase() + "_test";
@@ -91,7 +110,7 @@ public class Evaluator {
         createAndPopulateTable(tableName, dataType, results);
 
         results.recordMemory("population",
-            memoryBean.getHeapMemoryUsage().getUsed() - beforeMem.getUsed());
+                memoryBean.getHeapMemoryUsage().getUsed() - beforeMem.getUsed());
 
         // Mixed operations phase
         executeMixedOperations(tableName, dataType, results);
@@ -109,7 +128,7 @@ public class Evaluator {
         for (int i = 0; i < 1000; i++) {
             String value = valueGenerator.generateValue(dataType, i);
             String query = String.format("INSERT INTO %s VALUES (%d, %s)",
-                tableName, i, value);
+                    tableName, i, value);
 
             long start = System.nanoTime();
             dbEngine.executeSQL(query);
@@ -126,6 +145,155 @@ public class Evaluator {
     private void executeComplexQueries(String tableName, DataType dataType, TestResults results) {
         for (int i = 0; i < 100; i++) {
             complexExecutor.executeQuery(tableName, dataType, dbEngine, results);
+        }
+    }
+
+    public void testScalability() {
+        System.out.println("\nStarting scalability test");
+        int[] rowCounts = { 100, 1000, 10000, 30000 };
+        String[] implementations = { "backwards_", "chunk_", "forest_", "random_" };
+
+        for (String impl : implementations) {
+            System.out.println("\nEvaluating scalability for : " + impl);
+
+            for (int rowCount : rowCounts) {
+                System.out.println("\nTesting " + impl + " with " + rowCount + " rows");
+
+                dbEngine.reset();
+                System.gc();
+
+                long startTime = System.nanoTime();
+                MemoryUsage beforeMem = memoryBean.getHeapMemoryUsage();
+
+                // Populate table with n rows
+                String tableName = impl + "scalability_test";
+                populateTableForScalability(tableName, rowCount);
+
+                MemoryUsage afterMem = memoryBean.getHeapMemoryUsage();
+
+                double memoryUsed = (afterMem.getUsed() - beforeMem.getUsed()) / (1024.0 * 1024.0);
+                double timeTakenSeconds = (System.nanoTime() - startTime) / 1_000_000.0;
+
+                System.out.printf("===Population phase===\n");
+                System.out.printf("Rows: %d, Time Taken: %.3f seconds, Memory used: %.2f MB\n", rowCount,
+                        timeTakenSeconds, memoryUsed);
+                System.out.println("===Mixed Operations Phase===");
+                testOperationsForScale(tableName, rowCount, impl);
+            }
+        }
+
+        exportScalabilityResultsToCSV("evaluation_results/scalability_test_results.csv");
+    }
+
+    private void populateTableForScalability(String tableName, int rowCount) {
+        dbEngine.executeSQL("CREATE TABLE " + tableName + " (id, value)");
+        for (int i = 0; i < rowCount; i++) {
+            String value = valueGenerator.generateValue(DataType.SMALL_INTEGER, i);
+            String query = String.format("INSERT INTO %s VALUES (%d, %s)", tableName, i, value);
+            dbEngine.executeSQL(query);
+        }
+    }
+
+    // Method to test scalability, print table, and store results for CSV export
+    private void testOperationsForScale(String tableName, int rowCount, String implementation) {
+        long totalLatency = 0; // Sum of all latencies
+        long maxLatency = Long.MIN_VALUE; // Maximum latency
+        long minLatency = Long.MAX_VALUE; // Minimum latency
+        int count = 0;
+
+        TestResults results = new TestResults();
+        List<Long> latencySamples = new ArrayList<>();
+
+        // Execute operations and calculate metrics dynamically
+        for (int i = 0; i < rowCount; i++) {
+            long start = System.nanoTime();
+            standardExecutor.executeQuery(tableName, DataType.SMALL_INTEGER, dbEngine, results);
+            long duration = System.nanoTime() - start;
+
+            totalLatency += duration;
+            maxLatency = Math.max(maxLatency, duration);
+            minLatency = Math.min(minLatency, duration);
+
+            if (i % Math.max(1, rowCount / 1000) == 0) { // Sample dynamically based on rowCount
+                latencySamples.add(duration);
+            }
+            count++;
+        }
+
+        long avgLatency = totalLatency / count;
+        long percentile50 = (long) calculatePercentile(latencySamples, 50);
+        long percentile90 = (long) calculatePercentile(latencySamples, 90);
+
+        // Record results in TestResults for later analysis
+        results.recordLatency("SCALE_TEST_AVG_" + implementation + "_" + rowCount, avgLatency);
+        results.recordLatency("SCALE_TEST_50_PERCENTILE_" + implementation + "_" + rowCount, percentile50);
+        results.recordLatency("SCALE_TEST_90_PERCENTILE_" + implementation + "_" + rowCount, percentile90);
+        results.recordLatency("SCALE_TEST_MAX_" + implementation + "_" + rowCount, maxLatency);
+        results.recordLatency("SCALE_TEST_MIN_" + implementation + "_" + rowCount, minLatency);
+
+        // Print results in a table format
+        printTable(implementation, rowCount, totalLatency, avgLatency, minLatency, maxLatency, percentile50,
+                percentile90, count);
+
+        // Add results to the scalabilityResults list for CSV export
+        scalabilityResults.add(new String[] {
+                implementation,
+                String.valueOf(rowCount),
+                String.format("%.3f", totalLatency / 1_000_000.0),
+                String.format("%.3f", avgLatency / 1_000_000.0),
+                String.format("%.3f", minLatency / 1_000_000.0),
+                String.format("%.3f", maxLatency / 1_000_000.0),
+                String.format("%.3f", percentile50 / 1_000_000.0),
+                String.format("%.3f", percentile90 / 1_000_000.0)
+        });
+    }
+
+    private double calculatePercentile(List<Long> samples, double percentile) {
+        if (samples.isEmpty()) {
+            return 0; // Avoid division by zero
+        }
+
+        Collections.sort(samples); // Sort samples
+        int index = (int) Math.ceil(percentile / 100.0 * samples.size()) - 1;
+        return samples.get(Math.max(index, 0)); // Ensure index is within bounds
+    }
+
+    private void printTable(String implementation, int rowCount, long totalLatency, long avgLatency,
+            long minLatency, long maxLatency, long percentile50, long percentile90, int count) {
+        System.out.println("\n+--------------------------------------------------+");
+        System.out.printf("| %-48s |\n", "Scalability Test Results");
+        System.out.println("+--------------------------------------------------+");
+        System.out.printf("| %-18s : %-27s |\n", "Implementation", implementation);
+        System.out.printf("| %-18s : %-27d |\n", "Rows Tested", rowCount);
+        System.out.println("+--------------------------------------------------+");
+        System.out.printf("| %-20s | %-15s |\n", "Metric", "Value (ms)");
+        System.out.println("+----------------------+-----------------+");
+        System.out.printf("| %-20s | %13.3f ms |\n", "Total Time", totalLatency / 1_000_000.0);
+        System.out.printf("| %-20s | %13.3f ms |\n", "Avg Time/Op", avgLatency / 1_000_000.0);
+        System.out.printf("| %-20s | %13.3f ms |\n", "Min Latency", minLatency / 1_000_000.0);
+        System.out.printf("| %-20s | %13.3f ms |\n", "Max Latency", maxLatency / 1_000_000.0);
+        System.out.printf("| %-20s | %13.3f ms |\n", "50th Percentile", percentile50 / 1_000_000.0);
+        System.out.printf("| %-20s | %13.3f ms |\n", "90th Percentile", percentile90 / 1_000_000.0);
+        System.out.println("+----------------------+-----------------+");
+    }
+
+    // Method to export results to CSV
+    public void exportScalabilityResultsToCSV(String filePath) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath))) {
+            // Write header
+            writer.write(
+                    "Implementation,RowCount,TotalTime(ms),AvgTimePerOp(ms),MinLatency(ms),MaxLatency(ms),50thPercentile(ms),90thPercentile(ms)");
+            writer.newLine();
+
+            // Write each row of results
+            for (String[] row : scalabilityResults) {
+                writer.write(String.join(",", row));
+                writer.newLine();
+            }
+
+            System.out.println("Results exported to " + filePath);
+        } catch (IOException e) {
+            System.err.println("Failed to write results to CSV: " + e.getMessage());
         }
     }
 
@@ -150,7 +318,7 @@ public class Evaluator {
         try {
             String baseDir = "evaluation_results";
             generateCSVReports();
-            generateConditionalMetricsCSV(baseDir);  // Add this line to generate the conditional metrics CSV
+            generateConditionalMetricsCSV(baseDir); // Add this line to generate the conditional metrics CSV
         } catch (IOException e) {
             System.err.println("Failed to generate CSV reports: " + e.getMessage());
         }
@@ -247,10 +415,8 @@ public class Evaluator {
 
         // Calculate best performer for each operation
         Set<String> operations = new HashSet<>();
-        results.values().forEach(typeResults ->
-                typeResults.values().forEach(runResults ->
-                        runResults.forEach(run ->
-                                operations.addAll(run.getOperationLatencies().keySet()))));
+        results.values().forEach(typeResults -> typeResults.values().forEach(
+                runResults -> runResults.forEach(run -> operations.addAll(run.getOperationLatencies().keySet()))));
 
         for (String operation : operations) {
             Map<String, Double> implPerformance = new HashMap<>();
@@ -259,7 +425,8 @@ public class Evaluator {
                 typeResults.forEach((dataType, runResults) -> {
                     String implDataType = impl + "_" + dataType;
                     double avgLatency = runResults.stream()
-                            .flatMap(run -> run.getOperationLatencies().getOrDefault(operation, new ArrayList<>()).stream())
+                            .flatMap(run -> run.getOperationLatencies().getOrDefault(operation, new ArrayList<>())
+                                    .stream())
                             .mapToDouble(l -> l / 1_000_000.0)
                             .average()
                             .orElse(Double.MAX_VALUE);
@@ -316,8 +483,7 @@ public class Evaluator {
         // Collect all operation types for consistent reporting
         Set<String> allOperations = new HashSet<>(Arrays.asList(
                 "INSERT", "SELECT", "UPDATE", "DELETE",
-                "COMPLEX_SELECT", "COMPLEX_UPDATE", "COMPLEX_DELETE"
-        ));
+                "COMPLEX_SELECT", "COMPLEX_UPDATE", "COMPLEX_DELETE"));
 
         // Aggregate statistics across all runs
         results.forEach((impl, typeResults) -> {
@@ -365,8 +531,7 @@ public class Evaluator {
         Set<String> implementations = new TreeSet<>(
                 stats.values().stream()
                         .flatMap(m -> m.keySet().stream())
-                        .collect(Collectors.toSet())
-        );
+                        .collect(Collectors.toSet()));
 
         // Print header
         System.out.printf("%-30s", "Implementation_DataType");
@@ -438,9 +603,9 @@ public class Evaluator {
             implStats.entrySet().stream()
                     .sorted(Map.Entry.comparingByValue(
                             Comparator.comparingDouble(DoubleSummaryStatistics::getAverage)))
-                    .limit(3)  // Top 3 performers
+                    .limit(3) // Top 3 performers
                     .forEach(entry -> {
-                        String impl = entry.getKey().split("_")[0];  // Get implementation name
+                        String impl = entry.getKey().split("_")[0]; // Get implementation name
                         implStrengths.computeIfAbsent(impl, k -> new ArrayList<>())
                                 .add(op);
                     });
@@ -469,14 +634,13 @@ public class Evaluator {
     private void printTypeStatistics(List<TestResults> runResults) {
         // Calculate and print average latencies
         Map<String, List<Long>> allLatencies = new HashMap<>();
-        runResults.forEach(run ->
-            run.getOperationLatencies().forEach((op, latencies) ->
-                allLatencies.computeIfAbsent(op, k -> new ArrayList<>()).addAll(latencies)));
+        runResults.forEach(run -> run.getOperationLatencies().forEach(
+                (op, latencies) -> allLatencies.computeIfAbsent(op, k -> new ArrayList<>()).addAll(latencies)));
 
         allLatencies.forEach((op, latencies) -> {
             DoubleSummaryStatistics stats = latencies.stream()
-                .mapToDouble(l -> l / 1_000_000.0) // Convert to ms
-                .summaryStatistics();
+                    .mapToDouble(l -> l / 1_000_000.0) // Convert to ms
+                    .summaryStatistics();
 
             System.out.printf("\n%s Operations:\n", op);
             System.out.printf("  Average: %.3f ms\n", stats.getAverage());
@@ -487,8 +651,8 @@ public class Evaluator {
 
         // Calculate and print memory statistics
         DoubleSummaryStatistics memStats = runResults.stream()
-            .mapToDouble(r -> r.getPeakMemoryUsage() / (1024.0 * 1024.0)) // Convert to MB
-            .summaryStatistics();
+                .mapToDouble(r -> r.getPeakMemoryUsage() / (1024.0 * 1024.0)) // Convert to MB
+                .summaryStatistics();
 
         System.out.printf("\nMemory Usage:\n");
         System.out.printf("  Average: %.2f MB\n", memStats.getAverage());
@@ -497,12 +661,12 @@ public class Evaluator {
 
     private void evaluateConditionalQueries(String tableName, DataType dataType, TestResults results) {
         for (int i = 0; i < 100; i++) {
-            String conditionType = getConditionType(dataType);  // Capture the condition type
+            String conditionType = getConditionType(dataType); // Capture the condition type
             String conditionQuery = generateConditionalQuery(tableName, dataType, conditionType);
 
             long start = System.nanoTime();
             dbEngine.executeSQL(conditionQuery);
-            results.recordLatency(conditionType, System.nanoTime() - start);  // Use conditionType as the key
+            results.recordLatency(conditionType, System.nanoTime() - start); // Use conditionType as the key
         }
     }
 
@@ -528,13 +692,14 @@ public class Evaluator {
     private String generateConditionalQuery(String tableName, DataType dataType, String conditionType) {
         String condition;
         switch (conditionType) {
-            case "GREATER_THAN_CONDITION" -> condition = "value > 50 AND value < 100";
-            case "BOOLEAN_CONDITION" -> condition = "value = true";
-            case "DATE_CONDITION" -> condition = "value > '2022-01-01'";
-            default -> condition = "1=1";  // Fallback if no specific condition type
+            case "GREATER_THAN_CONDITION" -> condition = "value > '50' AND value < '100'"; // Treat integers as strings
+            case "BOOLEAN_CONDITION" -> condition = "value = 'true'"; // Treat booleans as strings
+            case "DATE_CONDITION" -> condition = "value > '2022-01-01'"; // Treat dates as strings
+            default -> condition = "1=1"; // Fallback if no specific condition type
         }
         return String.format("SELECT * FROM %s WHERE %s", tableName, condition);
     }
+
 
     private void generateConditionalMetricsCSV(String baseDir) throws IOException {
         Path filePath = Paths.get(baseDir, "conditional_metrics.csv");
@@ -550,7 +715,8 @@ public class Evaluator {
 
                     // Process each condition's latencies
                     runResults.forEach(run -> {
-                        run.getOperationLatencies().forEach((conditionType, latencies) -> {  // conditionType is now the key
+                        run.getOperationLatencies().forEach((conditionType, latencies) -> { // conditionType is now the
+                                                                                            // key
                             if (latencies != null && !latencies.isEmpty()) {
                                 double avgLatency = latencies.stream()
                                         .mapToDouble(l -> l / 1_000_000.0)
@@ -559,7 +725,7 @@ public class Evaluator {
 
                                 try {
                                     writer.write(String.format("%s,%s,%.3f,%d",
-                                            conditionType,  // Write the actual condition type
+                                            conditionType, // Write the actual condition type
                                             implDataType,
                                             avgLatency,
                                             latencies.size()));

@@ -33,7 +33,7 @@ public class SelectQueryGenerator implements QueryGenerator {
                     String.format("SELECT * FROM %s WHERE value >= %d AND value <= %d",
                             tableName, dataType.getMin(), dataType.getMin() + (dataType.getMax() - dataType.getMin()) / 2);
             case BOOLEAN ->
-                    String.format("SELECT * FROM %s WHERE value = %s",
+                    String.format("SELECT * FROM %s WHERE value = '%s'",
                             tableName, random.nextBoolean());
             case DATE ->
                     String.format("SELECT * FROM %s WHERE value >= '%s'",
