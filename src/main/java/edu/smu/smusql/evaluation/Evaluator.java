@@ -661,13 +661,14 @@ public class Evaluator {
     private String generateConditionalQuery(String tableName, DataType dataType, String conditionType) {
         String condition;
         switch (conditionType) {
-            case "GREATER_THAN_CONDITION" -> condition = "value > 50 AND value < 100";
-            case "BOOLEAN_CONDITION" -> condition = "value = true";
-            case "DATE_CONDITION" -> condition = "value > '2022-01-01'";
+            case "GREATER_THAN_CONDITION" -> condition = "value > '50' AND value < '100'"; // Treat integers as strings
+            case "BOOLEAN_CONDITION" -> condition = "value = 'true'"; // Treat booleans as strings
+            case "DATE_CONDITION" -> condition = "value > '2022-01-01'"; // Treat dates as strings
             default -> condition = "1=1"; // Fallback if no specific condition type
         }
         return String.format("SELECT * FROM %s WHERE %s", tableName, condition);
     }
+
 
     private void generateConditionalMetricsCSV(String baseDir) throws IOException {
         Path filePath = Paths.get(baseDir, "conditional_metrics.csv");

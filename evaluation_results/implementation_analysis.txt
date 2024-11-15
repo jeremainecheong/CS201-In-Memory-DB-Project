@@ -4,11 +4,11 @@ Implementation Analysis
 
 backwards Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.407 ms
-Complex Operations Avg: 0.748 ms
-Write Performance: 0.277 ms
-Read Performance: 0.653 ms
-Operation Consistency: 0.677 (lower is better)
+Basic Operations Avg: 0.591 ms
+Complex Operations Avg: 1.165 ms
+Write Performance: 0.391 ms
+Read Performance: 0.993 ms
+Operation Consistency: 0.872 (lower is better)
 
 Key Characteristics:
 - Stack-based implementation with batch processing
@@ -18,29 +18,29 @@ Key Characteristics:
 
 chunk Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.402 ms
-Complex Operations Avg: 0.778 ms
-Write Performance: 0.272 ms
-Read Performance: 0.666 ms
-Operation Consistency: 0.711 (lower is better)
+Basic Operations Avg: 0.570 ms
+Complex Operations Avg: 1.076 ms
+Write Performance: 0.380 ms
+Read Performance: 0.921 ms
+Operation Consistency: 0.826 (lower is better)
 
 
 forest Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.037 ms
-Complex Operations Avg: 0.053 ms
-Write Performance: 0.030 ms
-Read Performance: 0.047 ms
-Operation Consistency: 0.257 (lower is better)
+Basic Operations Avg: 0.029 ms
+Complex Operations Avg: 0.046 ms
+Write Performance: 0.023 ms
+Read Performance: 0.041 ms
+Operation Consistency: 0.156 (lower is better)
 
 
 random Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.396 ms
-Complex Operations Avg: 0.725 ms
-Write Performance: 0.268 ms
-Read Performance: 0.633 ms
-Operation Consistency: 0.682 (lower is better)
+Basic Operations Avg: 0.554 ms
+Complex Operations Avg: 1.094 ms
+Write Performance: 0.372 ms
+Read Performance: 0.927 ms
+Operation Consistency: 0.828 (lower is better)
 
 Key Characteristics:
 - Multiple queue distribution

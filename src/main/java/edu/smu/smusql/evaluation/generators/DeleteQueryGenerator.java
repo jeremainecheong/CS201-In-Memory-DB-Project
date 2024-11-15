@@ -28,14 +28,17 @@ public class DeleteQueryGenerator implements QueryGenerator {
     private String generateComplexQuery(String tableName, DataType dataType) {
         return switch (dataType) {
             case SMALL_INTEGER, LARGE_INTEGER, DECIMAL ->
-                String.format("DELETE FROM %s WHERE value >= %d AND value <= %d",
-                        tableName, dataType.getMin(), dataType.getMin() + (dataType.getMax() - dataType.getMin()) / 2);
-            case BOOLEAN, SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
-                String.format("DELETE FROM %s WHERE value = %s",
-                        tableName, random.nextBoolean());
+                    String.format("DELETE FROM %s WHERE value >= %d AND value <= %d",
+                            tableName, dataType.getMin(), dataType.getMin() + (dataType.getMax() - dataType.getMin()) / 2);
+            case BOOLEAN ->
+                    String.format("DELETE FROM %s WHERE value = '%s'",
+                            tableName, random.nextBoolean());
+            case SMALL_STRING, MEDIUM_STRING, LARGE_STRING ->
+                    String.format("DELETE FROM %s WHERE value = '%s'",
+                            tableName, valueGenerator.generateString(dataType.getMin(), dataType.getMax(), random.nextInt()).replace("'", ""));
             case DATE ->
-                String.format("DELETE FROM %s WHERE value >= %s",
-                        tableName, valueGenerator.generateValue(dataType, random.nextInt()));
+                    String.format("DELETE FROM %s WHERE value >= '%s'",
+                            tableName, valueGenerator.generateDate(random.nextInt()));
         };
     }
 }
