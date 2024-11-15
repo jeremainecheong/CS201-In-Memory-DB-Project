@@ -15,6 +15,7 @@ import java.lang.management.MemoryUsage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -31,6 +32,7 @@ public class Evaluator {
     private final ValueGenerator valueGenerator;
     private final StandardQueryExecutor standardExecutor;
     private final ComplexQueryExecutor complexExecutor;
+    private final List<String[]> scalabilityResults = new ArrayList<>();
 
     public Evaluator(Engine engine) {
         this.dbEngine = engine;
@@ -179,6 +181,8 @@ public class Evaluator {
                 testOperationsForScale(tableName, rowCount, impl);
             }
         }
+
+        exportScalabilityResultsToCSV("evaluation_results/scalability_test_results.csv");
     }
 
     private void populateTableForScalability(String tableName, int rowCount) {
@@ -190,14 +194,14 @@ public class Evaluator {
         }
     }
 
+    // Method to test scalability, print table, and store results for CSV export
     private void testOperationsForScale(String tableName, int rowCount, String implementation) {
-        TestResults results = new TestResults(); // Aggregate results
         long totalLatency = 0; // Sum of all latencies
         long maxLatency = Long.MIN_VALUE; // Maximum latency
         long minLatency = Long.MAX_VALUE; // Minimum latency
         int count = 0;
 
-        // Array to approximate percentiles
+        TestResults results = new TestResults();
         List<Long> latencySamples = new ArrayList<>();
 
         // Execute operations and calculate metrics dynamically
@@ -210,18 +214,13 @@ public class Evaluator {
             maxLatency = Math.max(maxLatency, duration);
             minLatency = Math.min(minLatency, duration);
 
-            // Incrementally track samples for percentile estimation
             if (i % Math.max(1, rowCount / 1000) == 0) { // Sample dynamically based on rowCount
                 latencySamples.add(duration);
             }
-
             count++;
         }
 
-        // Calculate average latency
         long avgLatency = totalLatency / count;
-
-        // Approximate percentiles using latencySamples
         long percentile50 = (long) calculatePercentile(latencySamples, 50);
         long percentile90 = (long) calculatePercentile(latencySamples, 90);
 
@@ -232,9 +231,21 @@ public class Evaluator {
         results.recordLatency("SCALE_TEST_MAX_" + implementation + "_" + rowCount, maxLatency);
         results.recordLatency("SCALE_TEST_MIN_" + implementation + "_" + rowCount, minLatency);
 
-        // Print results in a table
+        // Print results in a table format
         printTable(implementation, rowCount, totalLatency, avgLatency, minLatency, maxLatency, percentile50,
                 percentile90, count);
+
+        // Add results to the scalabilityResults list for CSV export
+        scalabilityResults.add(new String[] {
+                implementation,
+                String.valueOf(rowCount),
+                String.format("%.3f", totalLatency / 1_000_000.0),
+                String.format("%.3f", avgLatency / 1_000_000.0),
+                String.format("%.3f", minLatency / 1_000_000.0),
+                String.format("%.3f", maxLatency / 1_000_000.0),
+                String.format("%.3f", percentile50 / 1_000_000.0),
+                String.format("%.3f", percentile90 / 1_000_000.0)
+        });
     }
 
     private double calculatePercentile(List<Long> samples, double percentile) {
@@ -264,6 +275,26 @@ public class Evaluator {
         System.out.printf("| %-20s | %13.3f ms |\n", "50th Percentile", percentile50 / 1_000_000.0);
         System.out.printf("| %-20s | %13.3f ms |\n", "90th Percentile", percentile90 / 1_000_000.0);
         System.out.println("+----------------------+-----------------+");
+    }
+
+    // Method to export results to CSV
+    public void exportScalabilityResultsToCSV(String filePath) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(filePath))) {
+            // Write header
+            writer.write(
+                    "Implementation,RowCount,TotalTime(ms),AvgTimePerOp(ms),MinLatency(ms),MaxLatency(ms),50thPercentile(ms),90thPercentile(ms)");
+            writer.newLine();
+
+            // Write each row of results
+            for (String[] row : scalabilityResults) {
+                writer.write(String.join(",", row));
+                writer.newLine();
+            }
+
+            System.out.println("Results exported to " + filePath);
+        } catch (IOException e) {
+            System.err.println("Failed to write results to CSV: " + e.getMessage());
+        }
     }
 
     private void generateReport() {
