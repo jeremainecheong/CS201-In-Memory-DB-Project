@@ -22,7 +22,7 @@ public class Main {
                 if (input.equalsIgnoreCase("exit")) {
                     break;
                 } else if (input.equalsIgnoreCase("evaluate")) {
-                    runEvaluation();
+                    runEvaluation(scanner);
                 } else if (input.equalsIgnoreCase("help")) {
                     printCommands();
                 } else if (!input.isEmpty()) {
@@ -55,47 +55,45 @@ public class Main {
         System.out.println();
     }
 
-    private static void runEvaluation() {
+    private static void runEvaluation(Scanner scanner) {
         System.out.println("\nStarting Comprehensive Performance Evaluation");
         System.out.println("=========================================");
-        
+
         // Print evaluation details
         System.out.println("\nEvaluation will test:");
         System.out.println("- 4 implementations (BackwardsStack, Chunk, ForestMap, RandomQueue)");
         System.out.println("- 8 data types (varying string lengths, integers, decimals, etc.)");
         System.out.println("- Multiple operations (INSERT, SELECT, UPDATE, DELETE)");
         System.out.println("- Memory usage and operation latencies");
-        
+
         // Ask for confirmation
         System.out.print("\nThis evaluation will take several minutes. Continue? (y/n): ");
-        Scanner scanner = new Scanner(System.in);
         String response = scanner.nextLine().trim().toLowerCase();
-        
+
         if (!response.equals("y")) {
             System.out.println("Evaluation cancelled.");
             return;
         }
-
         try {
             Instant startTime = Instant.now();
 
             // Create and run evaluator
             Evaluator evaluator = new Evaluator(dbEngine);
-            evaluator.runEvaluation();
+            evaluator.runEvaluation(scanner);
 
             // Print completion statistics
             Instant endTime = Instant.now();
             Duration duration = Duration.between(startTime, endTime);
-            
+
             System.out.println("\nEvaluation completed successfully!");
-            System.out.printf("Total time: %d minutes, %d seconds\n", 
-                duration.toMinutes(), 
-                duration.getSeconds() % 60);
-            
+            System.out.printf("Total time: %d minutes, %d seconds\n",
+                    duration.toMinutes(),
+                    duration.getSeconds() % 60);
+
         } catch (Exception e) {
             System.err.println("\nEvaluation failed!");
             System.err.println("Error: " + e.getMessage());
-            
+
             if (Boolean.getBoolean("smusql.debug")) {
                 e.printStackTrace();
             } else {
