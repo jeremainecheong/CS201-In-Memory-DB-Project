@@ -9,19 +9,19 @@ public class LFUTable implements Table {
     private static final int CACHE_CAPACITY = 1000;
     
     private final List<String> columnNames;
-    private final Map<Integer, CacheNode> cache; // Stores actual Data
+    private final Map<Integer, DataType[]> cache; // Stores actual Data
     private final Map<Integer, Integer> frequencies; // Tracks frequency per key
     private final Map<Integer, LinkedHashSet<Integer>> freqList; // Groups keys by frequency
     private int minFrequency;
     private int size;
     
-    private class CacheNode {
-        DataType[] data;
+    // private class CacheNode {
+    //     DataType[] data;
         
-        CacheNode(DataType[] data) {
-            this.data = data;
-        }
-    }
+    //     CacheNode(DataType[] data) {
+    //         this.data = data;
+    //     }
+    // }
     
     public LFUTable(List<String> columns) {
         this.columnNames = new ArrayList<>(columns);
@@ -61,9 +61,9 @@ public class LFUTable implements Table {
         if (row == null) return;
         
         int key = Arrays.hashCode(row);
-        
+
         if (cache.containsKey(key)) {
-            cache.get(key).data = row;
+            cache.put(key, row);
             incrementFrequency(key);
             return;
         }
@@ -72,7 +72,7 @@ public class LFUTable implements Table {
             evict();
         }
         
-        cache.put(key, new CacheNode(row));
+        cache.put(key, row);
         frequencies.put(key, 1);
         freqList.get(1).add(key);
         minFrequency = 1;
@@ -83,10 +83,10 @@ public class LFUTable implements Table {
     public List<Map<String, String>> select(List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
         
-        for (Map.Entry<Integer, CacheNode> entry : cache.entrySet()) {
-            if (matchesConditions(entry.getValue().data, conditions)) {
+        for (Map.Entry<Integer, DataType[]> entry : cache.entrySet()) {
+            if (matchesConditions(entry.getValue(), conditions)) {
                 incrementFrequency(entry.getKey());
-                results.add(rowToMap(entry.getValue().data));
+                results.add(rowToMap(entry.getValue()));
             }
         }
         
@@ -103,9 +103,9 @@ public class LFUTable implements Table {
             throw new IllegalArgumentException("Column not found: " + column);
         }
         
-        for (Map.Entry<Integer, CacheNode> entry : new HashMap<>(cache).entrySet()) {
-            if (matchesConditions(entry.getValue().data, conditions)) {
-                entry.getValue().data[columnIndex] = newDataValue;
+        for (Map.Entry<Integer, DataType[]> entry : new HashMap<>(cache).entrySet()) {
+            if (matchesConditions(entry.getValue(), conditions)) {
+                entry.getValue()[columnIndex] = newDataValue;
                 incrementFrequency(entry.getKey());
                 updateCount++;
             }
@@ -117,11 +117,11 @@ public class LFUTable implements Table {
     @Override
     public int delete(List<String[]> conditions) {
         int deleteCount = 0;
-        Iterator<Map.Entry<Integer, CacheNode>> it = cache.entrySet().iterator();
+        Iterator<Map.Entry<Integer, DataType[]>> it = cache.entrySet().iterator();
         
         while (it.hasNext()) {
-            Map.Entry<Integer, CacheNode> entry = it.next();
-            if (matchesConditions(entry.getValue().data, conditions)) {
+            Map.Entry<Integer, DataType[]> entry = it.next();
+            if (matchesConditions(entry.getValue(), conditions)) {
                 int key = entry.getKey();
                 int freq = frequencies.get(key);
                 freqList.get(freq).remove(key);
