@@ -55,7 +55,8 @@ public class TableTest {
                 new ChunkTable(COLUMNS),
                 new ForestMapTable(COLUMNS),
                 new BackwardsStackTable(COLUMNS),
-                new RandomQueueTable(COLUMNS)
+                new RandomQueueTable(COLUMNS),
+                new LFUTable(COLUMNS)
         );
 
         for (Table table : implementations) {
