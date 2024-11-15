@@ -99,6 +99,9 @@ public class Engine {
         } else if (prefix.startsWith("forest_")) {
             table = new ForestMapTable(columns);
             implName = "ForestMap";
+        } else if (prefix.startsWith("lfu_")) {
+            table = new LFUTable(columns);
+            implName = "LFUTable";
         } else {
             table = new ChunkTable(columns);
             implName = "ChunkTable";
@@ -107,7 +110,6 @@ public class Engine {
         tables.put(tableName, table);
         return "Table '" + tableName + "' created with " + implName + " implementation";
     }
-
 
     /**
      * Inserts a row into a table
@@ -163,7 +165,6 @@ public class Engine {
             return "ERROR: Insert failed - " + e.getMessage();
         }
     }
-
 
     /**
      * Executes a SELECT query
@@ -234,7 +235,7 @@ public class Engine {
         List<String[]> conditions = new ArrayList<>();
 
         if (tokens.length > startIndex && tokens[startIndex].equalsIgnoreCase("WHERE")) {
-            String logicalOp = "AND";  // Default logical operator for the first condition
+            String logicalOp = "AND"; // Default logical operator for the first condition
             for (int i = startIndex + 1; i < tokens.length; i++) {
                 if (tokens[i].equalsIgnoreCase("AND") || tokens[i].equalsIgnoreCase("OR")) {
                     logicalOp = tokens[i].toUpperCase();
@@ -242,7 +243,7 @@ public class Engine {
                     String column = tokens[i - 1];
                     String operator = tokens[i];
                     String value = tokens[i + 1];
-                    conditions.add(new String[] {logicalOp, column, operator, value});
+                    conditions.add(new String[] { logicalOp, column, operator, value });
                     i++; // Skip over the value token
                     logicalOp = "AND"; // Reset logical operator after use
                 }
@@ -251,7 +252,6 @@ public class Engine {
 
         return conditions;
     }
-
 
     private String formatResults(List<Map<String, String>> results, List<String> columns) {
         if (results.isEmpty()) {
