@@ -392,6 +392,4 @@ public class LFUTable implements Table {
         }
         return map;
     }
-
-    
 }
