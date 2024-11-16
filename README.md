@@ -45,7 +45,6 @@ Traditional database systems rely on highly optimized, general-purpose structure
    mvn exec:java
    ```
 
-[Previous content until Available Commands remains the same...]
 
 ### Available Commands
 
@@ -104,8 +103,6 @@ SELECT * FROM forest_students WHERE gpa >= 3.0 AND age < 25
 CREATE TABLE lfu_students (id, name, age, gpa)
 SELECT * FROM lfu_students WHERE id = 1
 ```
-
-[Rest of the content remains the same...]
 
 ## Evaluation Framework
 
