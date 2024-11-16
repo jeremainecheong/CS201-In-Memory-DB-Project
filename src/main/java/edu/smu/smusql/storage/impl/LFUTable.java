@@ -10,7 +10,6 @@ public class LFUTable implements Table {
     
     private final List<String> columnNames;
     private final Map<DataType, DataType[]> cache; // Stores actual Data (in cache)
-    // private final List<DataType[]> cache; // Stores actual Data (in cache)
     private final List<DataType[]> backupStore; // Stores actual Data (in backupStore)
     private final Map<DataType, Integer> frequencies; // Tracks frequency per key
     private final Map<Integer, LinkedHashSet<DataType>> freqList; // Groups keys by frequency
@@ -21,7 +20,6 @@ public class LFUTable implements Table {
     public LFUTable(List<String> columns) {
         this.columnNames = new ArrayList<>(columns);
         this.cache = new HashMap<>();
-        // this.cache = new ArrayList<>();
         this.backupStore = new ArrayList<>(); 
         this.frequencies = new HashMap<>();
         this.freqList = new HashMap<>();
@@ -70,14 +68,13 @@ public class LFUTable implements Table {
 
         // Check cache first
         DataType[] cacheRecord = cache.get(targetId);
-        // int key = Arrays.hashCode(cacheRecord);
         if (cacheRecord != null) {
             // Cache hit
             if (matchesConditions(cacheRecord, conditions)) {
                 incrementFrequency(targetId);
                 results.add(rowToMap(cacheRecord));
             }
-            return results;  // Return immediately as we found or checked the specific record
+            return results; // Return immediately as we found or checked the specific record
         }
         
         // Cache miss - check backup store
@@ -111,7 +108,112 @@ public class LFUTable implements Table {
         }
         return results;
     }
-    
+
+    private int handleIdBasedUpdate(DataType targetId, int columnIndex, DataType newDataValue, List<String[]> conditions) {
+        // List<Map<String, String>> results = new ArrayList<>();
+        int updateCount = 0;
+
+        // Check cache first
+        DataType[] cacheRecord = cache.get(targetId);
+        if (cacheRecord != null) {
+            // Cache hit
+            if (matchesConditions(cacheRecord, conditions)) {
+                cacheRecord[columnIndex] = newDataValue;
+                incrementFrequency(targetId);
+                updateCount++;
+            }
+            return updateCount; // Return immediately as we found or checked the specific record
+        }
+        
+        // Cache miss - check backup store
+        for (DataType[] backupRecord : backupStore) {
+            if (matchesConditions(backupRecord, conditions)) {
+                backupRecord[columnIndex] = newDataValue;
+                updateCount++;
+
+                // Cache the fetched row
+                if (size >= CACHE_CAPACITY) {
+                    evict();
+                }
+                cache.put(targetId, backupRecord);
+                frequencies.put(targetId, 1);
+                freqList.get(1).add(targetId);
+                minFrequency = 1;
+                size++;
+            }
+        } 
+        
+        return updateCount;
+    }
+
+    private int handleNonIdUpdate(int columnIndex, DataType newDataValue, List<String[]> conditions) {
+        // For non-ID queries, look through entire db 
+        int updateCount = 0;
+        for (DataType[] backupRecord : backupStore) {
+            if (matchesConditions(backupRecord, conditions)) {
+                backupRecord[columnIndex] = newDataValue;
+                updateCount++;
+            }
+        } 
+        return updateCount;
+    }
+
+    private int handleIdBasedDelete(DataType targetId, List<String[]> conditions) {
+        int deleteCount = 0;
+
+        // Check cache first
+        DataType[] cacheRecord = cache.get(targetId);
+        if (cacheRecord != null) {
+            // Cache hit
+            Iterator<Map.Entry<DataType, DataType[]>> it = cache.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<DataType, DataType[]> entry = it.next();
+                if (matchesConditions(entry.getValue(), conditions)) {
+                    DataType key = entry.getKey();
+                    int freq = frequencies.get(key);
+                    freqList.get(freq).remove(key);
+                    frequencies.remove(key);
+                    it.remove();
+                    size--;
+                    deleteCount++;
+                }
+            }
+
+            return deleteCount; // Return immediately as we found or checked the specific record
+        }
+        
+        // Cache miss - check backup store
+        Iterator<DataType[]> it = backupStore.iterator();
+        while (it.hasNext()) {
+            DataType[] record = it.next();
+            if (matchesConditions(record, conditions)) {
+                int freq = frequencies.get(targetId);
+                freqList.get(freq).remove(targetId);
+                frequencies.remove(targetId);
+                it.remove();
+                size--;
+                deleteCount++;
+            }
+        }
+
+        return deleteCount;
+    }
+
+    private int handleNonIdDelete(List<String[]> conditions) {
+        // For non-ID queries, look through entire db 
+        int deleteCount = 0;
+        Iterator<DataType[]> it = backupStore.iterator();
+        while (it.hasNext()) {
+            DataType[] record = it.next();
+            if (matchesConditions(record, conditions)) {
+                it.remove();
+                size--;
+                deleteCount++;
+            }
+        }
+        return deleteCount;
+    }
+
     @Override
     public void insert(List<String> values) {
         DataType[] row = createRow(values);
@@ -157,44 +259,38 @@ public class LFUTable implements Table {
     
     @Override
     public int update(String column, String newValue, List<String[]> conditions) {
-        int updateCount = 0;
-        DataType newDataValue = DataType.fromString(newValue);
         int columnIndex = columnNames.indexOf(column);
         
         if (columnIndex == -1) {
             throw new IllegalArgumentException("Column not found: " + column);
         }
-        
-        for (Map.Entry<DataType, DataType[]> entry : new HashMap<>(cache).entrySet()) {
-            if (matchesConditions(entry.getValue(), conditions)) {
-                entry.getValue()[columnIndex] = newDataValue;
-                incrementFrequency(entry.getKey());
-                updateCount++;
-            }
+
+        DataType newDataValue = DataType.fromString(newValue);
+
+        // First check if we're querying by ID
+        DataType targetId = extractIdFromConditions(conditions);
+
+        if (targetId != null) {
+            // ID-based lookup
+            return handleIdBasedUpdate(targetId, columnIndex, newDataValue, conditions);
+        } else {
+            // Non-ID based query, fallback to backup store
+            return handleNonIdUpdate(columnIndex, newDataValue, conditions); 
         }
-        
-        return updateCount;
     }
     
     @Override
     public int delete(List<String[]> conditions) {
-        int deleteCount = 0;
-        Iterator<Map.Entry<DataType, DataType[]>> it = cache.entrySet().iterator();
-        
-        while (it.hasNext()) {
-            Map.Entry<DataType, DataType[]> entry = it.next();
-            if (matchesConditions(entry.getValue(), conditions)) {
-                DataType key = entry.getKey();
-                int freq = frequencies.get(key);
-                freqList.get(freq).remove(key);
-                frequencies.remove(key);
-                it.remove();
-                size--;
-                deleteCount++;
-            }
+        // First check if we're querying by ID
+        DataType targetId = extractIdFromConditions(conditions);
+
+        if (targetId != null) {
+            // ID-based lookup
+            return handleIdBasedDelete(targetId, conditions);
+        } else {
+            // Non-ID based query, fallback to backup store
+            return handleNonIdDelete(conditions); 
         }
-        
-        return deleteCount;
     }
     
     @Override
