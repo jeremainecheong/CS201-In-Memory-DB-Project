@@ -225,7 +225,7 @@ public class Evaluator {
         long initialMemoryUsed = beforeMixedOpsMemory.getUsed();
 
         // Execute operations and calculate metrics dynamically
-        for (int i = 0; i < rowCount; i++) {
+        for (int i = 0; i < TEST_OPERATIONS; i++) {
             long start = System.nanoTime();
             standardExecutor.executeQuery(tableName, DataType.SMALL_INTEGER, dbEngine, results);
             long duration = System.nanoTime() - start;
@@ -779,7 +779,7 @@ public class Evaluator {
             int key = zipfianGenerator.nextInt(1000); // Use Zipfian distribution for hot-spot access
             String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, key);
 
-//            System.out.println("Executing frequency test query: " + query);
+            // System.out.println("Executing frequency test query: " + query);
 
             long start = System.nanoTime();
             dbEngine.executeSQL(query);
@@ -801,7 +801,8 @@ public class Evaluator {
         for (int i = 0; i < 100; i++) {
             int lowerBound = random.nextInt(900);
             int upperBound = lowerBound + 100;
-            String query = String.format("SELECT * FROM %s WHERE id BETWEEN %d AND %d", tableName, lowerBound, upperBound);
+            String query = String.format("SELECT * FROM %s WHERE id BETWEEN %d AND %d", tableName, lowerBound,
+                    upperBound);
 
             long start = System.nanoTime();
             dbEngine.executeSQL(query);
