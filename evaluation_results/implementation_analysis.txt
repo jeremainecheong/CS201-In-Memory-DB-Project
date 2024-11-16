@@ -4,27 +4,27 @@ Implementation Analysis
 
 chunk Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.337 ms
-Complex Operations Avg: 0.623 ms
-Write Performance: 0.231 ms
-Read Performance: 0.522 ms
-Operation Consistency: 0.440 (lower is better)
+Basic Operations Avg: 0.285 ms
+Complex Operations Avg: 0.523 ms
+Write Performance: 0.199 ms
+Read Performance: 0.434 ms
+Operation Consistency: 0.407 (lower is better)
 
 
 forest Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.017 ms
-Complex Operations Avg: 0.026 ms
-Write Performance: 0.013 ms
-Read Performance: 0.022 ms
-Operation Consistency: 0.102 (lower is better)
+Basic Operations Avg: 0.018 ms
+Complex Operations Avg: 0.029 ms
+Write Performance: 0.014 ms
+Read Performance: 0.024 ms
+Operation Consistency: 0.182 (lower is better)
 
 
 lfu Implementation:
 ----------------------------------------
-Basic Operations Avg: 0.222 ms
-Complex Operations Avg: 0.304 ms
-Write Performance: 0.152 ms
-Read Performance: 0.288 ms
-Operation Consistency: 0.239 (lower is better)
+Basic Operations Avg: 0.165 ms
+Complex Operations Avg: 0.320 ms
+Write Performance: 0.023 ms
+Read Performance: 0.725 ms
+Operation Consistency: 0.638 (lower is better)
 

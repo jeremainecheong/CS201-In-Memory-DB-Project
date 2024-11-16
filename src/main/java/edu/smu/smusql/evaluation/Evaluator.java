@@ -51,12 +51,12 @@ public class Evaluator {
     public void runEvaluation(Scanner scanner) {
         // String[] implementations = { "backwards_", "chunk_", "forest_", "random_",
         // "lfu_" };
-        String[] implementations = { "forest_", "chunk_", "lfu_" };
+        String[] implementations = {"chunk_", "forest_", "lfu_"};
         System.out.println("\nSkip to scalability tests? (y/n)");
         System.out.flush();
         String r1 = scanner.nextLine().trim().toLowerCase();
         if (r1.equals("n") || r1.equals("no")) {
-            // System.out.println("Starting Comprehensive Performance Evaluation");
+             System.out.println("Starting Comprehensive Performance Evaluation");
             for (String impl : implementations) {
                 System.out.println("\nEvaluating implementation: " + impl);
                 results.put(impl, new EnumMap<>(DataType.class));
@@ -95,15 +95,6 @@ public class Evaluator {
 
             TestResults runResults = executeTestRun(implementation, dataType);
             typeResults.add(runResults);
-
-            // Conditional evaluation
-            String tableName = implementation + dataType.name().toLowerCase() + "_test";
-            evaluateConditionalQueries(tableName, dataType, runResults);
-
-            // New frequency, sequential, and range tests
-            executeFrequencyTest(tableName, dataType, runResults);
-            executeSequentialTest(tableName, dataType, runResults);
-            executeRangeTest(tableName, dataType, runResults);
         }
 
         results.get(implementation).put(dataType, typeResults);
@@ -122,11 +113,15 @@ public class Evaluator {
         results.recordMemory("population",
                 memoryBean.getHeapMemoryUsage().getUsed() - beforeMem.getUsed());
 
+        executeFrequencyTest(tableName, dataType, results);
+        executeSequentialTest(tableName, dataType, results);
+        executeRangeTest(tableName, dataType, results);
         // Mixed operations phase
         executeMixedOperations(tableName, dataType, results);
 
         // Complex queries phase
         executeComplexQueries(tableName, dataType, results);
+        evaluateConditionalQueries(tableName, dataType, results);
 
         results.setTotalDuration(System.nanoTime() - startTime);
         return results;
@@ -160,8 +155,8 @@ public class Evaluator {
 
     public void testScalability() {
         System.out.println("\nStarting scalability test");
-        int[] rowCounts = { 100, 1000, 10000, 30000 };
-        String[] implementations = { "forest_", "chunk_", "lfu_" };
+        int[] rowCounts = { 100, 1000};
+        String[] implementations = { "chunk_", "lfu_" };
 
         for (String impl : implementations) {
             System.out.println("\nEvaluating scalability for: " + impl);
@@ -790,10 +785,15 @@ public class Evaluator {
     private void executeSequentialTest(String tableName, DataType dataType, TestResults results) {
         for (int i = 0; i < 1000; i++) {
             String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, i);
+            System.out.println("Query: " + query);
 
             long start = System.nanoTime();
-            dbEngine.executeSQL(query);
+            String queryResults = dbEngine.executeSQL(query);
             results.recordLatency("SEQUENTIAL_TEST", System.nanoTime() - start);
+
+            System.out.println("Sequential test query result: " +
+                    (queryResults.isEmpty() ? "No results found" :
+                            queryResults));
         }
     }
 
