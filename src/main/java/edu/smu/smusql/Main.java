@@ -11,8 +11,19 @@ public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
-        System.out.println("smuSQL Database System by G2T2");
-        System.out.println("=====================");
+        System.out.println("Welcome to smuSQL Database System by G2T2!");
+        System.out.println("===========================================");
+        System.out.println("This is your gateway to a lightweight, yet powerful SQL interface.");
+        System.out.println("With smuSQL, you can create tables, insert data, run queries, and much more.");
+        System.out.println();
+        System.out.println("Key Features:");
+        System.out.println("- Execute SQL commands to interact with your database.");
+        System.out.println("- Type 'evaluate' to run a comprehensive performance evaluation.");
+        System.out.println("- Use 'help' to see the full list of supported commands.");
+        System.out.println("- Type 'exit' to safely quit the program.");
+        System.out.println();
+        System.out.println("Ready to explore the world of smuSQL? Let's get started!");
+        System.out.println();
 
         while (true) {
             System.out.print("smusql> ");
