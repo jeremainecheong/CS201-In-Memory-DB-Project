@@ -18,7 +18,7 @@ Traditional database systems rely on highly optimized, general-purpose structure
    - *Implementation:* Array-based storage with 128-row chunks and MRU tracking
    - *Focus:* Sequential access optimisation and memory efficiency
 
-3. **LFUTable**
+3. **FrequencyTable**
    - *Hypothesis:* Frequency-based data organization could naturally optimize for real-world access patterns
    - *Implementation:* Hybrid approach combining LFU cache with a backing store
    - *Focus:* 'Popularity bias' pattern optimization
