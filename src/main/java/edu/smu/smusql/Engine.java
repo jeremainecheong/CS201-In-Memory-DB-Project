@@ -7,7 +7,6 @@ import java.util.*;
 
 public class Engine {
     private Map<String, Table> tables = new HashMap<>();
-    private Parser parser = new Parser();
 
     /**
      * Resets the engine state, clearing all tables
@@ -87,16 +86,7 @@ public class Engine {
         String implName;
         String prefix = tableName.toLowerCase();
 
-        if (prefix.startsWith("backwards_")) {
-            table = new BackwardsStackTable(columns);
-            implName = "BackwardsStack";
-        } else if (prefix.startsWith("ping_")) {
-            table = new PingPongTable(columns);
-            implName = "PingPong";
-        } else if (prefix.startsWith("leaky_")) {
-            table = new LeakyBucketTable(columns);
-            implName = "LeakyBucket";
-        } else if (prefix.startsWith("forest_")) {
+        if (prefix.startsWith("forest_")) {
             table = new ForestMapTable(columns);
             implName = "ForestMap";
         } else if (prefix.startsWith("lfu_")) {

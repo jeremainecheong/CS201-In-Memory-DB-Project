@@ -13,10 +13,7 @@ import java.util.*;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
-import java.lang.management.MemoryPoolMXBean;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.nio.file.Files;
@@ -24,6 +21,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.stream.Collectors;
 
 public class Evaluator {
     private final Engine dbEngine;
@@ -49,9 +47,8 @@ public class Evaluator {
     }
 
     public void runEvaluation(Scanner scanner) {
-        // String[] implementations = { "backwards_", "chunk_", "forest_", "random_",
-        // "lfu_" };
-        String[] implementations = { "forest_", "chunk_", "lfu_" };
+        // String[] implementations = { "backwards_", "chunk_", "forest_", "random_", "lfu_" };
+        String[] implementations = {"forest_","chunk_", "lfu_"};
         System.out.println("\nSkip to scalability tests? (y/n)");
         System.out.flush();
         String r1 = scanner.nextLine().trim().toLowerCase();
@@ -95,15 +92,6 @@ public class Evaluator {
 
             TestResults runResults = executeTestRun(implementation, dataType);
             typeResults.add(runResults);
-
-            // Conditional evaluation
-            String tableName = implementation + dataType.name().toLowerCase() + "_test";
-            evaluateConditionalQueries(tableName, dataType, runResults);
-
-            // New frequency, sequential, and range tests
-            executeFrequencyTest(tableName, dataType, runResults);
-            executeSequentialTest(tableName, dataType, runResults);
-            executeRangeTest(tableName, dataType, runResults);
         }
 
         results.get(implementation).put(dataType, typeResults);
@@ -121,6 +109,14 @@ public class Evaluator {
 
         results.recordMemory("population",
                 memoryBean.getHeapMemoryUsage().getUsed() - beforeMem.getUsed());
+
+        // Run conditional queries before any deletions
+        evaluateConditionalQueries(tableName, dataType, results);
+
+        // Run frequency, sequential, and range tests before any deletions
+        executeFrequencyTest(tableName, dataType, results);
+        executeSequentialTest(tableName, dataType, results);
+        executeRangeTest(tableName, dataType, results);
 
         // Mixed operations phase
         executeMixedOperations(tableName, dataType, results);
@@ -143,6 +139,89 @@ public class Evaluator {
             long start = System.nanoTime();
             dbEngine.executeSQL(query);
             results.recordLatency("INSERT", System.nanoTime() - start);
+        }
+    }
+
+    private void evaluateConditionalQueries(String tableName, DataType dataType, TestResults results) {
+        for (int i = 0; i < 100; i++) {
+            String conditionType = getConditionType(dataType);
+            String conditionQuery = generateConditionalQuery(tableName, dataType, conditionType);
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(conditionQuery);
+            results.recordLatency(conditionType, System.nanoTime() - start);
+        }
+    }
+
+    private String getConditionType(DataType dataType) {
+        switch (dataType) {
+            case SMALL_INTEGER, LARGE_INTEGER -> {
+                return "GREATER_THAN_CONDITION";
+            }
+            case BOOLEAN -> {
+                return "BOOLEAN_CONDITION";
+            }
+            case DATE -> {
+                return "DATE_CONDITION";
+            }
+            default -> {
+                return "UNKNOWN_CONDITION";
+            }
+        }
+    }
+
+    private String generateConditionalQuery(String tableName, DataType dataType, String conditionType) {
+        String condition;
+        switch (conditionType) {
+            case "GREATER_THAN_CONDITION" -> condition = "value > '50' AND value < '100'"; // Treat integers as strings
+            case "BOOLEAN_CONDITION" -> condition = "value = 'true'"; // Treat booleans as strings
+            case "DATE_CONDITION" -> condition = "value > '2022-01-01'"; // Treat dates as strings
+            default -> condition = "1=1"; // Fallback if no specific condition type
+        }
+        return String.format("SELECT * FROM %s WHERE %s", tableName, condition);
+    }
+
+    private void executeFrequencyTest(String tableName, DataType dataType, TestResults results) {
+        List<Integer> queryKeys = new ArrayList<>();
+        for (int i = 0; i < TEST_OPERATIONS; i++) {
+            queryKeys.add(zipfianGenerator.nextInt(1000)); // Generate keys based on Zipfian distribution
+        }
+        Collections.shuffle(queryKeys); // Shuffle queries to eliminate recency bias
+
+        for (int key : queryKeys) {
+            String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, key);
+            if(tableName.startsWith("chunk_")){
+                int warmupKey = random.nextInt(1,1000);
+                dbEngine.executeSQL(String.format("SELECT * FROM %s WHERE id = %d", tableName, warmupKey));
+            }
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(query);
+            results.recordLatency("FREQUENCY_TEST", System.nanoTime() - start);
+        }
+    }
+
+
+    private void executeSequentialTest(String tableName, DataType dataType, TestResults results) {
+        for (int i = 0; i < 1000; i++) {
+            String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, i);
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(query);
+            results.recordLatency("SEQUENTIAL_TEST", System.nanoTime() - start);
+        }
+    }
+
+    private void executeRangeTest(String tableName, DataType dataType, TestResults results) {
+        for (int i = 0; i < 100; i++) {
+            int lowerBound = random.nextInt(900);
+            int upperBound = lowerBound + 100;
+            String query = String.format("SELECT * FROM %s WHERE id BETWEEN %d AND %d", tableName, lowerBound,
+                    upperBound);
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(query);
+            results.recordLatency("RANGE_TEST", System.nanoTime() - start);
         }
     }
 
@@ -211,7 +290,7 @@ public class Evaluator {
 
     // Method to test scalability, print table, and store results for CSV export
     private void testOperationsForScale(String tableName, int rowCount, String implementation,
-            double initialMemoryOverhead) {
+                                        double initialMemoryOverhead) {
         long totalLatency = 0; // Sum of all latencies
         long maxLatency = Long.MIN_VALUE; // Maximum latency
         long minLatency = Long.MAX_VALUE; // Minimum latency
@@ -225,7 +304,7 @@ public class Evaluator {
         long initialMemoryUsed = beforeMixedOpsMemory.getUsed();
 
         // Execute operations and calculate metrics dynamically
-        for (int i = 0; i < rowCount; i++) {
+        for (int i = 0; i < TEST_OPERATIONS; i++) {
             long start = System.nanoTime();
             standardExecutor.executeQuery(tableName, DataType.SMALL_INTEGER, dbEngine, results);
             long duration = System.nanoTime() - start;
@@ -242,11 +321,9 @@ public class Evaluator {
 
         // Measure memory after mixed operations phase
         MemoryUsage afterMixedOpsMemory = memoryBean.getHeapMemoryUsage();
-        double memoryOverhead = (afterMixedOpsMemory.getUsed() - initialMemoryUsed) / (1024.0 * 1024.0); // Convert to
-                                                                                                         // MB
+        double memoryOverhead = (afterMixedOpsMemory.getUsed() - initialMemoryUsed) / (1024.0 * 1024.0); // Convert to MB
 
-        // If memory overhead is negative, fall back to initial memory overhead as an
-        // approximation
+        // If memory overhead is negative, fall back to initial memory overhead as an approximation
         if (memoryOverhead < 0) {
             memoryOverhead = initialMemoryOverhead;
         }
@@ -291,7 +368,7 @@ public class Evaluator {
     }
 
     private void printTable(String implementation, int rowCount, long totalLatency, long avgLatency,
-            long minLatency, long maxLatency, long percentile50, long percentile90, double memoryOverhead, int count) {
+                            long minLatency, long maxLatency, long percentile50, long percentile90, double memoryOverhead, int count) {
         System.out.println("\n+--------------------------------------------------+");
         System.out.printf("| %-48s |\n", "Scalability Test Results");
         System.out.println("+--------------------------------------------------+");
@@ -693,47 +770,6 @@ public class Evaluator {
         System.out.printf("  Peak: %.2f MB\n", memStats.getMax());
     }
 
-    private void evaluateConditionalQueries(String tableName, DataType dataType, TestResults results) {
-        for (int i = 0; i < 100; i++) {
-            String conditionType = getConditionType(dataType); // Capture the condition type
-            String conditionQuery = generateConditionalQuery(tableName, dataType, conditionType);
-
-            long start = System.nanoTime();
-            dbEngine.executeSQL(conditionQuery);
-            results.recordLatency(conditionType, System.nanoTime() - start); // Use conditionType as the key
-        }
-    }
-
-    // Helper method to generate a condition type based on the DataType
-    private String getConditionType(DataType dataType) {
-        switch (dataType) {
-            case SMALL_INTEGER, LARGE_INTEGER -> {
-                return "GREATER_THAN_CONDITION";
-            }
-            case BOOLEAN -> {
-                return "BOOLEAN_CONDITION";
-            }
-            case DATE -> {
-                return "DATE_CONDITION";
-            }
-            default -> {
-                return "UNKNOWN_CONDITION";
-            }
-        }
-    }
-
-    // Modify the generateConditionalQuery method to accept conditionType
-    private String generateConditionalQuery(String tableName, DataType dataType, String conditionType) {
-        String condition;
-        switch (conditionType) {
-            case "GREATER_THAN_CONDITION" -> condition = "value > '50' AND value < '100'"; // Treat integers as strings
-            case "BOOLEAN_CONDITION" -> condition = "value = 'true'"; // Treat booleans as strings
-            case "DATE_CONDITION" -> condition = "value > '2022-01-01'"; // Treat dates as strings
-            default -> condition = "1=1"; // Fallback if no specific condition type
-        }
-        return String.format("SELECT * FROM %s WHERE %s", tableName, condition);
-    }
-
     private void generateConditionalMetricsCSV(String baseDir) throws IOException {
         Path filePath = Paths.get(baseDir, "conditional_metrics.csv");
 
@@ -771,41 +807,6 @@ public class Evaluator {
                     });
                 });
             });
-        }
-    }
-
-    private void executeFrequencyTest(String tableName, DataType dataType, TestResults results) {
-        for (int i = 0; i < TEST_OPERATIONS; i++) {
-            int key = zipfianGenerator.nextInt(1000); // Use Zipfian distribution for hot-spot access
-            String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, key);
-
-//            System.out.println("Executing frequency test query: " + query);
-
-            long start = System.nanoTime();
-            dbEngine.executeSQL(query);
-            results.recordLatency("FREQUENCY_TEST", System.nanoTime() - start);
-        }
-    }
-
-    private void executeSequentialTest(String tableName, DataType dataType, TestResults results) {
-        for (int i = 0; i < 1000; i++) {
-            String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, i);
-
-            long start = System.nanoTime();
-            dbEngine.executeSQL(query);
-            results.recordLatency("SEQUENTIAL_TEST", System.nanoTime() - start);
-        }
-    }
-
-    private void executeRangeTest(String tableName, DataType dataType, TestResults results) {
-        for (int i = 0; i < 100; i++) {
-            int lowerBound = random.nextInt(900);
-            int upperBound = lowerBound + 100;
-            String query = String.format("SELECT * FROM %s WHERE id BETWEEN %d AND %d", tableName, lowerBound, upperBound);
-
-            long start = System.nanoTime();
-            dbEngine.executeSQL(query);
-            results.recordLatency("RANGE_TEST", System.nanoTime() - start);
         }
     }
 

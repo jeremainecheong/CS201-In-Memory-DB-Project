@@ -12,9 +12,11 @@ import java.util.*;
 public class ChunkTable implements Table {
     private static final int CHUNK_SIZE = 128; // Rows per chunk
 
-    private final List<String> columnNames;
+    private final List<String> columnNames; // Columns, first is primary key
     private final List<Chunk> chunks;
-    private Chunk currentChunk;
+    private Chunk currentChunk; // Tracks the chunk currently being written to
+    private Chunk mostRecentlyUsedChunk; // Tracks the most recently used chunk
+
 
     /**
      * Represents a fixed-size block of data.
@@ -117,6 +119,7 @@ public class ChunkTable implements Table {
         this.columnNames = new ArrayList<>(columns);
         this.chunks = new ArrayList<>();
         this.currentChunk = new Chunk();
+        this.mostRecentlyUsedChunk = null;
         this.chunks.add(currentChunk);
     }
 
@@ -125,12 +128,12 @@ public class ChunkTable implements Table {
         DataType[] row = createRow(values);
         if (row == null) return;
 
+        // Add row to the current chunk
         if (currentChunk.isFull()) {
-            // Start a new chunk
             currentChunk = new Chunk();
             chunks.add(currentChunk);
         }
-
+        mostRecentlyUsedChunk = currentChunk;
         currentChunk.addRow(row);
     }
 
@@ -138,24 +141,177 @@ public class ChunkTable implements Table {
     public List<Map<String, String>> select(List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
 
+        // Extract primary keys from conditions
+        Set<DataType> targetIds = extractPrimaryKeys(conditions);
+        Set<DataType> foundIds = new HashSet<>();
+
+        if (!targetIds.isEmpty()) {
+            // Check most recently used chunk first
+            if (mostRecentlyUsedChunk != null) {
+                results.addAll(selectFromChunkForPrimaryKeys(mostRecentlyUsedChunk, targetIds, foundIds));
+                if (foundIds.size() == targetIds.size()) {
+                    return results; // Cease search when all primary keys are found
+                }
+            }
+
+            // Check current chunk if it's not the most recently used chunk
+            if (currentChunk != mostRecentlyUsedChunk) {
+                results.addAll(selectFromChunkForPrimaryKeys(currentChunk, targetIds, foundIds));
+                if (foundIds.size() == targetIds.size()) {
+                    return results;
+                }
+            }
+
+            // Check remaining chunks
+            for (Chunk chunk : chunks) {
+                if (chunk != mostRecentlyUsedChunk && chunk != currentChunk) {
+                    results.addAll(selectFromChunkForPrimaryKeys(chunk, targetIds, foundIds));
+                    if (foundIds.size() == targetIds.size()) {
+                        return results;
+                    }
+                }
+            }
+
+            return results; // Return results after scanning all chunks
+        }
+
+        // If no primary key conditions, scan all chunks
         for (Chunk chunk : chunks) {
-            // Process each chunk
-            for (int i = 0; i < chunk.size; i++) {
-                if (chunk.validRows.get(i)) {
-                    DataType[] row = chunk.rows[i];
-                    if (matchesConditions(row, conditions)) {
-                        Map<String, String> resultRow = rowToMap(row);
-                        results.add(resultRow);
+            results.addAll(selectFromChunk(chunk, conditions));
+        }
+
+        return results;
+    }
+
+    private List<Map<String, String>> selectFromChunkForPrimaryKeys(Chunk chunk, Set<DataType> targetIds, Set<DataType> foundIds) {
+        List<Map<String, String>> results = new ArrayList<>();
+
+        for (int i = 0; i < chunk.size; i++) {
+            if (chunk.validRows.get(i)) {
+                DataType[] row = chunk.rows[i];
+                if (targetIds.contains(row[0])) { // Check if row's primary key is in the target set
+                    results.add(rowToMap(row));
+                    foundIds.add(row[0]);
+
+                    // Stop scanning this chunk if all target IDs are found
+                    if (foundIds.size() == targetIds.size()) {
+                        return results;
                     }
                 }
             }
         }
+
+        // Update most recently used chunk
+        mostRecentlyUsedChunk = chunk;
+
+        return results;
+    }
+
+
+    /**
+     * Selects rows from a specific chunk.
+     */
+    private List<Map<String, String>> selectFromChunk(Chunk chunk, List<String[]> conditions) {
+        List<Map<String, String>> results = new ArrayList<>();
+
+        for (int i = 0; i < chunk.size; i++) {
+            if (chunk.validRows.get(i)) {
+                DataType[] row = chunk.rows[i];
+                if (conditions == null || conditions.isEmpty() || matchesConditions(row, conditions)) {
+                    results.add(rowToMap(row));
+                }
+            }
+        }
+
+        // Update most recently used chunk
+        mostRecentlyUsedChunk = chunk;
 
         return results;
     }
 
     @Override
     public int update(String column, String newValue, List<String[]> conditions) {
+        int updateCount = 0;
+
+        // Extract primary keys from conditions
+        Set<DataType> targetIds = extractPrimaryKeys(conditions);
+        Set<DataType> updatedIds = new HashSet<>();
+        DataType newDataValue = DataType.fromString(newValue);
+        int columnIndex = columnNames.indexOf(column);
+
+        if (columnIndex == -1) {
+            throw new IllegalArgumentException("Column not found: " + column);
+        }
+
+        if (!targetIds.isEmpty()) {
+            // Update most recently used chunk first
+            if (mostRecentlyUsedChunk != null) {
+                updateCount += updateChunkForPrimaryKeys(mostRecentlyUsedChunk, columnIndex, newDataValue, targetIds, updatedIds);
+                if (updatedIds.size() == targetIds.size()) {
+                    return updateCount;
+                }
+            }
+
+            // Update current chunk if it's not the most recently used chunk
+            if (currentChunk != mostRecentlyUsedChunk) {
+                updateCount += updateChunkForPrimaryKeys(currentChunk, columnIndex, newDataValue, targetIds, updatedIds);
+                if (updatedIds.size() == targetIds.size()) {
+                    return updateCount;
+                }
+            }
+
+            // Update remaining chunks
+            for (Chunk chunk : chunks) {
+                if (chunk != mostRecentlyUsedChunk && chunk != currentChunk) {
+                    updateCount += updateChunkForPrimaryKeys(chunk, columnIndex, newDataValue, targetIds, updatedIds);
+                    if (updatedIds.size() == targetIds.size()) {
+                        return updateCount;
+                    }
+                }
+            }
+
+            return updateCount;
+        }
+
+        // If no primary key conditions, update all chunks
+        for (Chunk chunk : chunks) {
+            updateCount += updateChunk(chunk, column, newValue, conditions);
+        }
+
+        return updateCount;
+    }
+
+    private int updateChunkForPrimaryKeys(Chunk chunk, int columnIndex, DataType newDataValue, Set<DataType> targetIds, Set<DataType> updatedIds) {
+        int updateCount = 0;
+
+        for (int i = 0; i < chunk.size; i++) {
+            if (chunk.validRows.get(i)) {
+                DataType[] row = chunk.rows[i];
+                if (targetIds.contains(row[0])) {
+                    row[columnIndex] = newDataValue;
+                    updatedIds.add(row[0]);
+                    updateCount++;
+
+                    // Stop scanning this chunk if all target IDs are updated
+                    if (updatedIds.size() == targetIds.size()) {
+                        return updateCount;
+                    }
+                }
+            }
+        }
+
+        // Update most recently used chunk
+        mostRecentlyUsedChunk = chunk;
+
+        return updateCount;
+    }
+
+
+
+    /**
+     * Updates rows in a specific chunk.
+     */
+    private int updateChunk(Chunk chunk, String column, String newValue, List<String[]> conditions) {
         int updateCount = 0;
         DataType newDataValue = DataType.fromString(newValue);
         int columnIndex = columnNames.indexOf(column);
@@ -164,17 +320,18 @@ public class ChunkTable implements Table {
             throw new IllegalArgumentException("Column not found: " + column);
         }
 
-        for (Chunk chunk : chunks) {
-            for (int i = 0; i < chunk.size; i++) {
-                if (chunk.validRows.get(i)) {
-                    DataType[] row = chunk.rows[i];
-                    if (matchesConditions(row, conditions)) {
-                        row[columnIndex] = newDataValue;
-                        updateCount++;
-                    }
+        for (int i = 0; i < chunk.size; i++) {
+            if (chunk.validRows.get(i)) {
+                DataType[] row = chunk.rows[i];
+                if (matchesConditions(row, conditions)) {
+                    row[columnIndex] = newDataValue;
+                    updateCount++;
                 }
             }
         }
+
+        // Update most recently used chunk
+        mostRecentlyUsedChunk = chunk;
 
         return updateCount;
     }
@@ -183,18 +340,95 @@ public class ChunkTable implements Table {
     public int delete(List<String[]> conditions) {
         int deleteCount = 0;
 
-        for (Chunk chunk : chunks) {
-            for (int i = 0; i < chunk.size; i++) {
-                if (chunk.validRows.get(i) && matchesConditions(chunk.rows[i], conditions)) {
-                    chunk.deleteRow(i);
-                    deleteCount++;
+        // Extract primary keys from conditions
+        Set<DataType> targetIds = extractPrimaryKeys(conditions);
+        Set<DataType> deletedIds = new HashSet<>();
+
+        if (!targetIds.isEmpty()) {
+            // Delete from most recently used chunk first
+            if (mostRecentlyUsedChunk != null) {
+                deleteCount += deleteFromChunkForPrimaryKeys(mostRecentlyUsedChunk, targetIds, deletedIds);
+                if (deletedIds.size() == targetIds.size()) {
+                    return deleteCount;
                 }
             }
 
-            if (chunk.shouldReorganize()) {
-                chunk.compact();
+            // Delete from current chunk if it's not the most recently used chunk
+            if (currentChunk != mostRecentlyUsedChunk) {
+                deleteCount += deleteFromChunkForPrimaryKeys(currentChunk, targetIds, deletedIds);
+                if (deletedIds.size() == targetIds.size()) {
+                    return deleteCount;
+                }
+            }
+
+            // Delete from remaining chunks
+            for (Chunk chunk : chunks) {
+                if (chunk != mostRecentlyUsedChunk && chunk != currentChunk) {
+                    deleteCount += deleteFromChunkForPrimaryKeys(chunk, targetIds, deletedIds);
+                    if (deletedIds.size() == targetIds.size()) {
+                        return deleteCount;
+                    }
+                }
+            }
+
+            return deleteCount;
+        }
+
+        // If no primary key conditions, delete from all chunks
+        for (Chunk chunk : chunks) {
+            deleteCount += deleteFromChunk(chunk, conditions);
+        }
+
+        return deleteCount;
+    }
+
+    private int deleteFromChunkForPrimaryKeys(Chunk chunk, Set<DataType> targetIds, Set<DataType> deletedIds) {
+        int deleteCount = 0;
+
+        for (int i = 0; i < chunk.size; i++) {
+            if (chunk.validRows.get(i)) {
+                DataType[] row = chunk.rows[i];
+                if (targetIds.contains(row[0])) {
+                    chunk.deleteRow(i);
+                    deletedIds.add(row[0]);
+                    deleteCount++;
+
+                    // Compact the chunk if needed
+                    if (chunk.shouldReorganize()) {
+                        chunk.compact();
+                    }
+
+                    // Stop scanning this chunk if all target IDs are deleted
+                    if (deletedIds.size() == targetIds.size()) {
+                        return deleteCount;
+                    }
+                }
             }
         }
+
+        // Update most recently used chunk
+        mostRecentlyUsedChunk = chunk;
+
+        return deleteCount;
+    }
+
+
+    private int deleteFromChunk(Chunk chunk, List<String[]> conditions) {
+        int deleteCount = 0;
+
+        for (int i = 0; i < chunk.size; i++) {
+            if (chunk.validRows.get(i) && matchesConditions(chunk.rows[i], conditions)) {
+                chunk.deleteRow(i);
+                deleteCount++;
+            }
+        }
+
+        if (chunk.shouldReorganize()) {
+            chunk.compact();
+        }
+
+        // Update most recently used chunk
+        mostRecentlyUsedChunk = chunk;
 
         return deleteCount;
     }
@@ -348,5 +582,26 @@ public class ChunkTable implements Table {
             }
         }
         return map;
+    }
+
+    private Set<DataType> extractPrimaryKeys(List<String[]> conditions) {
+        Set<DataType> primaryKeys = new HashSet<>();
+
+        if (conditions != null) {
+            for (String[] condition : conditions) {
+                if (condition.length == 4) {
+                    String column = condition[1];
+                    String operator = condition[2];
+                    String value = condition[3];
+
+                    // Check if the condition is on the primary key column with "=" operator
+                    if (column.equals(columnNames.get(0)) && operator.equals("=")) {
+                        primaryKeys.add(DataType.fromString(value));
+                    }
+                }
+            }
+        }
+
+        return primaryKeys;
     }
 }

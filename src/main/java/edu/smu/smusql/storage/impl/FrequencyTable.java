@@ -392,6 +392,4 @@ public class FrequencyTable implements Table {
         }
         return map;
     }
-
-    
 }
