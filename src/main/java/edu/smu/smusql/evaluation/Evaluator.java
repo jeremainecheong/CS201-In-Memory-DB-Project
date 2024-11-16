@@ -48,7 +48,7 @@ public class Evaluator {
 
     public void runEvaluation(Scanner scanner) {
         // String[] implementations = { "backwards_", "chunk_", "forest_", "random_", "lfu_" };
-        String[] implementations = { "forest_", "chunk_", "lfu_" };
+        String[] implementations = {"forest_","chunk_", "lfu_"};
         System.out.println("\nSkip to scalability tests? (y/n)");
         System.out.flush();
         String r1 = scanner.nextLine().trim().toLowerCase();
@@ -182,15 +182,25 @@ public class Evaluator {
     }
 
     private void executeFrequencyTest(String tableName, DataType dataType, TestResults results) {
+        List<Integer> queryKeys = new ArrayList<>();
         for (int i = 0; i < TEST_OPERATIONS; i++) {
-            int key = zipfianGenerator.nextInt(1000); // Use Zipfian distribution for hot-spot access
+            queryKeys.add(zipfianGenerator.nextInt(1000)); // Generate keys based on Zipfian distribution
+        }
+        Collections.shuffle(queryKeys); // Shuffle queries to eliminate recency bias
+
+        for (int key : queryKeys) {
             String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, key);
+            if(tableName.startsWith("chunk_")){
+                int warmupKey = random.nextInt(1,1000);
+                dbEngine.executeSQL(String.format("SELECT * FROM %s WHERE id = %d", tableName, warmupKey));
+            }
 
             long start = System.nanoTime();
             dbEngine.executeSQL(query);
             results.recordLatency("FREQUENCY_TEST", System.nanoTime() - start);
         }
     }
+
 
     private void executeSequentialTest(String tableName, DataType dataType, TestResults results) {
         for (int i = 0; i < 1000; i++) {
