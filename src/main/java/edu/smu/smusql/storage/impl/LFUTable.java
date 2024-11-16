@@ -82,15 +82,19 @@ public class LFUTable implements Table {
             if (matchesConditions(backupRecord, conditions)) {
                 results.add(rowToMap(backupRecord));
 
-                // Cache the fetched row
-                if (size >= CACHE_CAPACITY) {
-                    evict();
+                // Cache the fetched row if its freq >= minFreq
+                DataType key = backupRecord[0];
+                if (frequencies.get(key) >= minFrequency) {
+                    // Cache the fetched row
+                    if (size >= CACHE_CAPACITY) {
+                        evict();
+                    }
+                    cache.put(targetId, backupRecord);
+                    frequencies.put(targetId, 1);
+                    freqList.get(1).add(targetId);
+                    minFrequency = 1;
+                    size++;
                 }
-                cache.put(targetId, backupRecord);
-                frequencies.put(targetId, 1);
-                freqList.get(1).add(targetId);
-                minFrequency = 1;
-                size++;
             }
         } 
         
@@ -110,7 +114,6 @@ public class LFUTable implements Table {
     }
 
     private int handleIdBasedUpdate(DataType targetId, int columnIndex, DataType newDataValue, List<String[]> conditions) {
-        // List<Map<String, String>> results = new ArrayList<>();
         int updateCount = 0;
 
         // Check cache first
@@ -131,15 +134,19 @@ public class LFUTable implements Table {
                 backupRecord[columnIndex] = newDataValue;
                 updateCount++;
 
-                // Cache the fetched row
-                if (size >= CACHE_CAPACITY) {
-                    evict();
+                // Cache the fetched row if its freq >= minFreq
+                DataType key = backupRecord[0];
+                if (frequencies.get(key) >= minFrequency) {
+                    // Cache the fetched row
+                    if (size >= CACHE_CAPACITY) {
+                        evict();
+                    }
+                    cache.put(targetId, backupRecord);
+                    frequencies.put(targetId, 1);
+                    freqList.get(1).add(targetId);
+                    minFrequency = 1;
+                    size++;
                 }
-                cache.put(targetId, backupRecord);
-                frequencies.put(targetId, 1);
-                freqList.get(1).add(targetId);
-                minFrequency = 1;
-                size++;
             }
         } 
         
@@ -224,23 +231,26 @@ public class LFUTable implements Table {
 
         // Then add to cache
         DataType pkey = row[0];
-        // int key = Arrays.hashCode(row);
 
+        // Cache contains row
         if (cache.containsKey(pkey)) {
             cache.put(pkey, row);
             incrementFrequency(pkey);
             return;
         }
         
-        if (size >= CACHE_CAPACITY) {
-            evict();
+        // Cache does not contain row
+        if (minFrequency <= 1) {
+            if (size >= CACHE_CAPACITY) {
+                evict();
+            }
+
+            cache.put(pkey, row);
+            frequencies.put(pkey, 1);
+            freqList.get(1).add(pkey);
+            minFrequency = 1;
+            size++;
         }
-        
-        cache.put(pkey, row);
-        frequencies.put(pkey, 1);
-        freqList.get(1).add(pkey);
-        minFrequency = 1;
-        size++;
     }
     
     @Override
