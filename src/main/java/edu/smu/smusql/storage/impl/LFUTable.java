@@ -5,6 +5,11 @@ import edu.smu.smusql.storage.DataType;
 
 import java.util.*;
 
+/**
+ * LFUTable implements a hybrid storage approach combining LFU (Least Frequently Used) cache
+ * with a backing store. Optimized for frequency-based access patterns with a focus on
+ * frequently accessed data.
+ */
 public class LFUTable implements Table {
     private static final int CACHE_CAPACITY = 128;
     
@@ -29,7 +34,13 @@ public class LFUTable implements Table {
         
         freqList.put(1, new LinkedHashSet<>());
     }
-    
+
+    /**
+     * Manages frequency tracking for cache entries.
+     * Updates frequency counts and maintains the frequency-based ordering.
+     *
+     * @param key The key whose frequency should be incremented
+     */
     private void incrementFrequency(DataType key) {
         int freq = frequencies.get(key);
         frequencies.put(key, freq + 1);
@@ -41,7 +52,11 @@ public class LFUTable implements Table {
         
         freqList.computeIfAbsent(freq + 1, k -> new LinkedHashSet<>()).add(key);
     }
-    
+
+    /**
+     * Removes the least frequently used item from the cache.
+     * When cache is full, removes the item with minimum frequency.
+     */
     private void evict() {
         LinkedHashSet<DataType> minFreqSet = freqList.get(minFrequency);
         DataType keyToRemove = minFreqSet.iterator().next();
@@ -51,6 +66,13 @@ public class LFUTable implements Table {
         size--;
     }
 
+    /**
+     * Extracts primary key value from condition list if it exists.
+     * Looks for exact match condition on ID column.
+     *
+     * @param conditions List of condition arrays
+     * @return Primary key value if found, null otherwise
+     */
     private DataType extractIdFromConditions(List<String[]> conditions) {
         if (conditions == null || conditions.isEmpty()) return null;
         
@@ -63,6 +85,14 @@ public class LFUTable implements Table {
         return null;
     }
 
+    /**
+     * Handles ID-based select operations with cache optimization.
+     * Implements cache hit/miss logic and frequency updates.
+     *
+     * @param targetId Primary key value to search for
+     * @param conditions List of condition arrays
+     * @return List of matching rows
+     */
     private List<Map<String, String>> handleIdBasedSelect(DataType targetId, List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
 
@@ -113,6 +143,16 @@ public class LFUTable implements Table {
         return results;
     }
 
+    /**
+     * Handles ID-based update operations with cache optimization.
+     * Updates both cache and backup store as needed.
+     *
+     * @param targetId Primary key value to update
+     * @param columnIndex Index of column to update
+     * @param newDataValue New value
+     * @param conditions List of condition arrays
+     * @return Number of rows updated
+     */
     private int handleIdBasedUpdate(DataType targetId, int columnIndex, DataType newDataValue, List<String[]> conditions) {
         int updateCount = 0;
 
@@ -165,6 +205,14 @@ public class LFUTable implements Table {
         return updateCount;
     }
 
+    /**
+     * Handles ID-based delete operations with cache optimization.
+     * Maintains cache state and backup store consistency.
+     *
+     * @param targetId Primary key value to delete
+     * @param conditions List of condition arrays
+     * @return Number of rows deleted
+     */
     private int handleIdBasedDelete(DataType targetId, List<String[]> conditions) {
         int deleteCount = 0;
 
@@ -221,6 +269,12 @@ public class LFUTable implements Table {
         return deleteCount;
     }
 
+    /**
+     * Inserts a new row into both backup store and cache if applicable.
+     * Manages cache frequency tracking and eviction.
+     *
+     * @param values List of string values corresponding to each column
+     */
     @Override
     public void insert(List<String> values) {
         DataType[] row = createRow(values);
@@ -252,7 +306,14 @@ public class LFUTable implements Table {
             size++;
         }
     }
-    
+
+    /**
+     * Performs optimized selection using cache for frequent queries.
+     * Falls back to backup store for cache misses or non-ID queries.
+     *
+     * @param conditions List of condition arrays: [logical_op, column, operator, value]
+     * @return List of maps representing matching rows
+     */
     @Override
     public List<Map<String, String>> select(List<String[]> conditions) {
         // First check if we're querying by ID
@@ -266,7 +327,16 @@ public class LFUTable implements Table {
             return handleNonIdSelect(conditions); 
         }
     }
-    
+
+    /**
+     * Updates values with cache-aware optimization.
+     * Maintains consistency between cache and backup store.
+     *
+     * @param column Column to update
+     * @param newValue New value for the column
+     * @param conditions List of condition arrays
+     * @return Number of rows updated
+     */
     @Override
     public int update(String column, String newValue, List<String[]> conditions) {
         int columnIndex = columnNames.indexOf(column);
@@ -288,7 +358,14 @@ public class LFUTable implements Table {
             return handleNonIdUpdate(columnIndex, newDataValue, conditions); 
         }
     }
-    
+
+    /**
+     * Deletes rows with cache-aware optimization.
+     * Maintains consistency between cache and backup store.
+     *
+     * @param conditions List of condition arrays
+     * @return Number of rows deleted
+     */
     @Override
     public int delete(List<String[]> conditions) {
         // First check if we're querying by ID
@@ -307,7 +384,14 @@ public class LFUTable implements Table {
     public List<String> getColumns() {
         return new ArrayList<>(columnNames);
     }
-    
+
+    /**
+     * Creates a DataType array from string values.
+     * Handles type inference and null values.
+     *
+     * @param values List of string values
+     * @return DataType array representing the row
+     */
     private DataType[] createRow(List<String> values) {
         if (values.size() != columnNames.size()) {
             throw new IllegalArgumentException("Value count mismatch");
@@ -322,7 +406,15 @@ public class LFUTable implements Table {
         }
         return row;
     }
-    
+
+    /**
+     * Evaluates if a row matches the provided conditions.
+     * Supports both AND and OR operations with proper precedence.
+     *
+     * @param row Row data as DataType array
+     * @param conditions List of condition arrays
+     * @return True if row matches conditions, false otherwise
+     */
     private boolean matchesConditions(DataType[] row, List<String[]> conditions) {
         if (conditions == null || conditions.isEmpty()) return true;
         
@@ -384,7 +476,14 @@ public class LFUTable implements Table {
             default -> throw new IllegalArgumentException("Unsupported operator: " + operator);
         };
     }
-    
+
+    /**
+     * Converts a row's DataType array into a Map representation.
+     * Handles null value conversion.
+     *
+     * @param row The row data
+     * @return Map of column names to string values
+     */
     private Map<String, String> rowToMap(DataType[] row) {
         Map<String, String> map = new LinkedHashMap<>();
         for (int i = 0; i < columnNames.size(); i++) {

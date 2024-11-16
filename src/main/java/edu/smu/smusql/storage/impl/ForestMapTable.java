@@ -5,6 +5,11 @@ import edu.smu.smusql.storage.Table;
 
 import java.util.*;
 
+/**
+ * ForestMapTable implements a multi-index structure using TreeMaps for each column.
+ * Optimized for range queries and complex conditions through synchronized tree-based indexes
+ * with bidirectional node links between column values.
+ */
 public class ForestMapTable implements Table {
     private Map<String, TreeMap<DataType, List<Node>>> columns = new HashMap<>();
     private final List<String> columnNames = new ArrayList<>();
@@ -21,6 +26,12 @@ public class ForestMapTable implements Table {
         return new ArrayList<>(columnNames);
     }
 
+    /**
+     * Inserts a new row into the table by creating linked nodes across all column indexes.
+     * Maintains bidirectional relationships between column values for efficient traversal.
+     *
+     * @param values List of string values corresponding to each column
+     */
     @Override
     public void insert(List<String> values) {
         if (values.size() != columnNames.size()) {
@@ -46,6 +57,13 @@ public class ForestMapTable implements Table {
         }
     }
 
+    /**
+     * Performs optimized selection using tree-based indexes.
+     * Efficiently handles range queries and complex conditions using TreeMap operations.
+     *
+     * @param conditions List of condition arrays: [logical_op, column, operator, value]
+     * @return List of maps representing matching rows
+     */
     @Override
     public List<Map<String, String>> select(List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
@@ -121,6 +139,14 @@ public class ForestMapTable implements Table {
         return results;
     }
 
+    /**
+     * Evaluates a set of conditions against a row.
+     * Handles complex logical combinations of AND/OR conditions.
+     *
+     * @param row Map of column names to values
+     * @param conditions List of condition arrays
+     * @return True if row matches conditions, false otherwise
+     */
     private boolean evaluateConditions(Map<String, String> row, List<String[]> conditions) {
         if (conditions == null || conditions.isEmpty()) {
             return true;
@@ -157,6 +183,15 @@ public class ForestMapTable implements Table {
         return result;
     }
 
+    /**
+     * Evaluates a single condition against a value.
+     * Supports comparison operators: =, >, <, >=, <=
+     *
+     * @param rowValueStr Value from the row
+     * @param operator Comparison operator
+     * @param valueStr Value to compare against
+     * @return True if condition is satisfied, false otherwise
+     */
     private boolean evaluateCondition(String rowValueStr, String operator, String valueStr) {
         DataType rowValue = DataType.fromString(rowValueStr);
         DataType value = DataType.fromString(valueStr);
@@ -173,6 +208,15 @@ public class ForestMapTable implements Table {
         };
     }
 
+    /**
+     * Updates values while maintaining index consistency across all columns.
+     * Handles index reorganization when values change.
+     *
+     * @param column Column to update
+     * @param value New value for the column
+     * @param conditions List of condition arrays: [logical_op, column, operator, value]
+     * @return Number of rows updated
+     */
     @Override
     public int update(String column, String value, List<String[]> conditions) {
         int updatedCount = 0;
@@ -205,6 +249,13 @@ public class ForestMapTable implements Table {
         return updatedCount;
     }
 
+    /**
+     * Deletes rows and maintains index consistency across all columns.
+     * Removes nodes from all relevant indexes.
+     *
+     * @param conditions List of condition arrays: [logical_op, column, operator, value]
+     * @return Number of rows deleted
+     */
     @Override
     public int delete(List<String[]> conditions) {
         int deletedCount = 0;
@@ -220,6 +271,13 @@ public class ForestMapTable implements Table {
         return deletedCount;
     }
 
+    /**
+     * Retrieves a complete row starting from a node.
+     * Traverses bidirectional links to gather all column values.
+     *
+     * @param startNode Starting node of the row
+     * @return Map of column names to values
+     */
     private Map<String, String> retrieveRow(Node startNode) {
         Map<String, String> row = new HashMap<>();
         Node currentNode = startNode;
@@ -233,6 +291,14 @@ public class ForestMapTable implements Table {
         return row;
     }
 
+    /**
+     * Finds a specific node in the multi-index structure.
+     * Uses primary key index for initial lookup and validates through links.
+     *
+     * @param row Row values to match
+     * @param targetColumn Target column to find
+     * @return Node if found, null otherwise
+     */
     private Node findNode(Map<String, String> row, String targetColumn) {
         int targetIndex = columnNames.indexOf(targetColumn);
 
@@ -256,6 +322,15 @@ public class ForestMapTable implements Table {
         return null;
     }
 
+    /**
+     * Validates a node matches a row and returns the target column node.
+     * Traverses through node links to ensure row integrity.
+     *
+     * @param startNode Initial node to start validation from
+     * @param row Expected row values
+     * @param targetIndex Index of target column
+     * @return Target node if valid, null otherwise
+     */
     private Node validateAndGetTargetNode(Node startNode, Map<String, String> row, int targetIndex) {
         Node currentNode = startNode;
 
@@ -288,6 +363,12 @@ public class ForestMapTable implements Table {
         return currentNode;
     }
 
+    /**
+     * Deletes a row from all indexes starting from a node.
+     * Maintains index consistency by removing nodes from all column indexes.
+     *
+     * @param startNode Starting node of the row to delete
+     */
     private void deleteRow(Node startNode) {
         Node currentNode = startNode;
         while (currentNode.left != null) currentNode = currentNode.left;
@@ -309,6 +390,10 @@ public class ForestMapTable implements Table {
         }
     }
 
+    /**
+     * Inner class representing a node in the multi-index structure.
+     * Maintains bidirectional links between column values.
+     */
     class Node {
         DataType value;
         Node left;

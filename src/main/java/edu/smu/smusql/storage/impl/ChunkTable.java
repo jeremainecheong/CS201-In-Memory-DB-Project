@@ -123,6 +123,13 @@ public class ChunkTable implements Table {
         this.chunks.add(currentChunk);
     }
 
+    /**
+     * Inserts a new row into the table.
+     * Automatically allocates new chunks when current chunk is full.
+     * Updates MRU tracking for optimization.
+     *
+     * @param values List of string values corresponding to each column
+     */
     @Override
     public void insert(List<String> values) {
         DataType[] row = createRow(values);
@@ -137,6 +144,14 @@ public class ChunkTable implements Table {
         currentChunk.addRow(row);
     }
 
+    /**
+     * Selects rows based on specified conditions.
+     * Optimizes queries using primary key when possible.
+     * Implements MRU (Most Recently Used) chunk tracking for performance.
+     *
+     * @param conditions List of condition arrays: [logical_op, column, operator, value]
+     * @return List of maps representing matching rows
+     */
     @Override
     public List<Map<String, String>> select(List<String[]> conditions) {
         List<Map<String, String>> results = new ArrayList<>();
@@ -229,6 +244,16 @@ public class ChunkTable implements Table {
         return results;
     }
 
+    /**
+     * Updates rows that match the specified conditions.
+     * Optimizes updates using primary key when possible.
+     * Maintains chunk organization and MRU tracking.
+     *
+     * @param column     Column to update
+     * @param newValue   New value for the column
+     * @param conditions List of condition arrays: [logical_op, column, operator, value]
+     * @return Number of rows updated
+     */
     @Override
     public int update(String column, String newValue, List<String[]> conditions) {
         int updateCount = 0;
@@ -336,6 +361,14 @@ public class ChunkTable implements Table {
         return updateCount;
     }
 
+    /**
+     * Deletes rows that match the specified conditions.
+     * Optimizes deletion using primary key when possible.
+     * Handles chunk compaction when deletion threshold is reached.
+     *
+     * @param conditions List of condition arrays: [logical_op, column, operator, value]
+     * @return Number of rows deleted
+     */
     @Override
     public int delete(List<String[]> conditions) {
         int deleteCount = 0;
