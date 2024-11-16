@@ -6,6 +6,7 @@ import edu.smu.smusql.evaluation.metrics.TestResults;
 import edu.smu.smusql.evaluation.generators.ValueGenerator;
 import edu.smu.smusql.evaluation.operations.StandardQueryExecutor;
 import edu.smu.smusql.evaluation.operations.ComplexQueryExecutor;
+import edu.smu.smusql.evaluation.utils.ZipfianGenerator;
 
 import java.io.IOException;
 import java.util.*;
@@ -35,6 +36,7 @@ public class Evaluator {
     private final StandardQueryExecutor standardExecutor;
     private final ComplexQueryExecutor complexExecutor;
     private final List<String[]> scalabilityResults = new ArrayList<>();
+    private final ZipfianGenerator zipfianGenerator = new ZipfianGenerator(1.2, 1000); // Higher alpha for skew
 
     public Evaluator(Engine engine) {
         this.dbEngine = engine;
@@ -97,6 +99,11 @@ public class Evaluator {
             // Conditional evaluation
             String tableName = implementation + dataType.name().toLowerCase() + "_test";
             evaluateConditionalQueries(tableName, dataType, runResults);
+
+            // New frequency, sequential, and range tests
+            executeFrequencyTest(tableName, dataType, runResults);
+            executeSequentialTest(tableName, dataType, runResults);
+            executeRangeTest(tableName, dataType, runResults);
         }
 
         results.get(implementation).put(dataType, typeResults);
@@ -344,7 +351,8 @@ public class Evaluator {
         try {
             String baseDir = "evaluation_results";
             generateCSVReports();
-            generateConditionalMetricsCSV(baseDir); // Add this line to generate the conditional metrics CSV
+            generateConditionalMetricsCSV(baseDir); // Generates conditional metrics CSV
+            generateAccessPatternMetricsCSV(baseDir); // Generates access pattern metrics CSVs
         } catch (IOException e) {
             System.err.println("Failed to generate CSV reports: " + e.getMessage());
         }
@@ -764,5 +772,90 @@ public class Evaluator {
                 });
             });
         }
+    }
+
+    private void executeFrequencyTest(String tableName, DataType dataType, TestResults results) {
+        for (int i = 0; i < TEST_OPERATIONS; i++) {
+            int key = zipfianGenerator.nextInt(1000); // Use Zipfian distribution for hot-spot access
+            String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, key);
+
+//            System.out.println("Executing frequency test query: " + query);
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(query);
+            results.recordLatency("FREQUENCY_TEST", System.nanoTime() - start);
+        }
+    }
+
+    private void executeSequentialTest(String tableName, DataType dataType, TestResults results) {
+        for (int i = 0; i < 1000; i++) {
+            String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, i);
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(query);
+            results.recordLatency("SEQUENTIAL_TEST", System.nanoTime() - start);
+        }
+    }
+
+    private void executeRangeTest(String tableName, DataType dataType, TestResults results) {
+        for (int i = 0; i < 100; i++) {
+            int lowerBound = random.nextInt(900);
+            int upperBound = lowerBound + 100;
+            String query = String.format("SELECT * FROM %s WHERE id BETWEEN %d AND %d", tableName, lowerBound, upperBound);
+
+            long start = System.nanoTime();
+            dbEngine.executeSQL(query);
+            results.recordLatency("RANGE_TEST", System.nanoTime() - start);
+        }
+    }
+
+    private void generateAccessPatternMetricsCSV(String baseDir) throws IOException {
+        generatePatternMetricsCSV(baseDir, "frequency_metrics.csv", "FREQUENCY_TEST");
+        generatePatternMetricsCSV(baseDir, "sequential_metrics.csv", "SEQUENTIAL_TEST");
+        generatePatternMetricsCSV(baseDir, "range_metrics.csv", "RANGE_TEST");
+    }
+
+    private void generatePatternMetricsCSV(String baseDir, String fileName, String patternType) throws IOException {
+        Path filePath = Paths.get(baseDir, fileName);
+
+        try (BufferedWriter writer = Files.newBufferedWriter(filePath)) {
+            // Write header
+            writer.write("Condition,Implementation_DataType,Average_Time_ms,Sample_Count");
+            writer.newLine();
+
+            results.forEach((impl, typeResults) -> {
+                typeResults.forEach((dataType, runResults) -> {
+                    String implDataType = impl + "_" + dataType;
+
+                    // Process each pattern's latencies
+                    runResults.forEach(run -> {
+                        List<Long> latencies = run.getOperationLatencies().get(patternType);
+                        if (latencies != null && !latencies.isEmpty()) {
+                            double avgLatency = latencies.stream()
+                                    .mapToDouble(l -> l / 1_000_000.0)
+                                    .average()
+                                    .orElse(0.0);
+
+                            try {
+                                writer.write(String.format("%s,%s,%.3f,%d",
+                                        patternType,
+                                        implDataType,
+                                        avgLatency,
+                                        latencies.size()));
+                                writer.newLine();
+                                System.out.printf("Wrote %s data for %s: AvgLatency=%.3f ms, SampleCount=%d%n",
+                                        patternType, implDataType, avgLatency, latencies.size());
+                            } catch (IOException e) {
+                                throw new RuntimeException("Error writing " + patternType + " data", e);
+                            }
+                        } else {
+                            System.out.printf("No data recorded for %s in %s%n", patternType, implDataType);
+                        }
+                    });
+                });
+            });
+        }
+
+        System.out.println("Results for " + patternType + " written to " + filePath);
     }
 }
