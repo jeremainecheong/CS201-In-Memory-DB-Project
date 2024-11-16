@@ -9,29 +9,30 @@ public class LFUTable implements Table {
     private static final int CACHE_CAPACITY = 128;
     
     private final List<String> columnNames;
-    private final Map<Integer, DataType[]> cache; // Stores actual Data (in cache)
-    private final Map<Integer, Integer> frequencies; // Tracks frequency per key
-    private final Map<Integer, LinkedHashSet<Integer>> freqList; // Groups keys by frequency
+    private final Map<DataType, DataType[]> cache; // Stores actual Data (in cache)
+    // private final List<DataType[]> cache; // Stores actual Data (in cache)
     private final List<DataType[]> backupStore; // Stores actual Data (in backupStore)
-    private final String idColumn; // Primary key
+    private final Map<DataType, Integer> frequencies; // Tracks frequency per key
+    private final Map<Integer, LinkedHashSet<DataType>> freqList; // Groups keys by frequency
+    private final String idColumn; // Primary key (DataType)
     private int minFrequency;
     private int size;
     
     public LFUTable(List<String> columns) {
         this.columnNames = new ArrayList<>(columns);
         this.cache = new HashMap<>();
+        // this.cache = new ArrayList<>();
+        this.backupStore = new ArrayList<>(); 
         this.frequencies = new HashMap<>();
         this.freqList = new HashMap<>();
         this.idColumn = columns.get(0); // Assume primary key is first column
-        this.backupStore = new ArrayList<>(); 
-        // this.idColumnIndex = 0;
         this.minFrequency = 0;
         this.size = 0;
         
         freqList.put(1, new LinkedHashSet<>());
     }
     
-    private void incrementFrequency(int key) {
+    private void incrementFrequency(DataType key) {
         int freq = frequencies.get(key);
         frequencies.put(key, freq + 1);
         freqList.get(freq).remove(key);
@@ -44,8 +45,8 @@ public class LFUTable implements Table {
     }
     
     private void evict() {
-        LinkedHashSet<Integer> minFreqSet = freqList.get(minFrequency);
-        int keyToRemove = minFreqSet.iterator().next();
+        LinkedHashSet<DataType> minFreqSet = freqList.get(minFrequency);
+        DataType keyToRemove = minFreqSet.iterator().next();
         minFreqSet.remove(keyToRemove);
         cache.remove(keyToRemove);
         frequencies.remove(keyToRemove);
@@ -69,11 +70,11 @@ public class LFUTable implements Table {
 
         // Check cache first
         DataType[] cacheRecord = cache.get(targetId);
-        int key = Arrays.hashCode(cacheRecord);
+        // int key = Arrays.hashCode(cacheRecord);
         if (cacheRecord != null) {
             // Cache hit
             if (matchesConditions(cacheRecord, conditions)) {
-                incrementFrequency(key);
+                incrementFrequency(targetId);
                 results.add(rowToMap(cacheRecord));
             }
             return results;  // Return immediately as we found or checked the specific record
@@ -88,9 +89,9 @@ public class LFUTable implements Table {
                 if (size >= CACHE_CAPACITY) {
                     evict();
                 }
-                cache.put(key, backupRecord);
-                frequencies.put(key, 1);
-                freqList.get(1).add(key);
+                cache.put(targetId, backupRecord);
+                frequencies.put(targetId, 1);
+                freqList.get(1).add(targetId);
                 minFrequency = 1;
                 size++;
             }
@@ -120,11 +121,12 @@ public class LFUTable implements Table {
         backupStore.add(row);
 
         // Then add to cache
-        int key = Arrays.hashCode(row);
+        DataType pkey = row[0];
+        // int key = Arrays.hashCode(row);
 
-        if (cache.containsKey(key)) {
-            cache.put(key, row);
-            incrementFrequency(key);
+        if (cache.containsKey(pkey)) {
+            cache.put(pkey, row);
+            incrementFrequency(pkey);
             return;
         }
         
@@ -132,9 +134,9 @@ public class LFUTable implements Table {
             evict();
         }
         
-        cache.put(key, row);
-        frequencies.put(key, 1);
-        freqList.get(1).add(key);
+        cache.put(pkey, row);
+        frequencies.put(pkey, 1);
+        freqList.get(1).add(pkey);
         minFrequency = 1;
         size++;
     }
@@ -163,7 +165,7 @@ public class LFUTable implements Table {
             throw new IllegalArgumentException("Column not found: " + column);
         }
         
-        for (Map.Entry<Integer, DataType[]> entry : new HashMap<>(cache).entrySet()) {
+        for (Map.Entry<DataType, DataType[]> entry : new HashMap<>(cache).entrySet()) {
             if (matchesConditions(entry.getValue(), conditions)) {
                 entry.getValue()[columnIndex] = newDataValue;
                 incrementFrequency(entry.getKey());
@@ -177,12 +179,12 @@ public class LFUTable implements Table {
     @Override
     public int delete(List<String[]> conditions) {
         int deleteCount = 0;
-        Iterator<Map.Entry<Integer, DataType[]>> it = cache.entrySet().iterator();
+        Iterator<Map.Entry<DataType, DataType[]>> it = cache.entrySet().iterator();
         
         while (it.hasNext()) {
-            Map.Entry<Integer, DataType[]> entry = it.next();
+            Map.Entry<DataType, DataType[]> entry = it.next();
             if (matchesConditions(entry.getValue(), conditions)) {
-                int key = entry.getKey();
+                DataType key = entry.getKey();
                 int freq = frequencies.get(key);
                 freqList.get(freq).remove(key);
                 frequencies.remove(key);
