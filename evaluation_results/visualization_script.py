@@ -72,7 +72,7 @@ def create_operation_performance_plot(df):
     sns.heatmap(performance_data,
                 annot=True,
                 fmt='.3f',
-                cmap='YlOrRd_r')
+                cmap='YlOrRd')
     plt.title('Operation Performance by Implementation (Lower is Better)')
     plt.ylabel('Implementation')
     plt.xlabel('Operation')
@@ -111,7 +111,7 @@ def create_data_type_comparison(df):
     sns.heatmap(data_type_perf,
                 annot=True,
                 fmt='.3f',
-                cmap='YlOrRd_r')
+                cmap='YlOrRd')
     plt.title('Operation Performance by Data Type (Lower is Better)')
     plt.ylabel('Data Type')
     plt.xlabel('Operation')
@@ -189,7 +189,7 @@ def analyze_operation_patterns(df):
     sns.heatmap(basic_data,
                 annot=True,
                 fmt='.3f',
-                cmap='YlOrRd_r')
+                cmap='YlOrRd')
     plt.title('Basic Operation Performance\n(Lower is Better)')
 
     # Complex operations subplot
@@ -204,7 +204,7 @@ def analyze_operation_patterns(df):
     sns.heatmap(complex_data,
                 annot=True,
                 fmt='.3f',
-                cmap='YlOrRd_r')
+                cmap='YlOrRd')
     plt.title('Complex Operation Performance\n(Lower is Better)')
 
     plt.tight_layout()
@@ -244,7 +244,7 @@ def analyze_implementation_characteristics(df):
     sns.heatmap(characteristics,
                 annot=True,
                 fmt='.3f',
-                cmap='YlOrRd_r')
+                cmap='YlOrRd')
     plt.title('Implementation Characteristics\n(Lower is Better)')
     plt.tight_layout()
     plt.savefig('implementation_characteristics.png')
