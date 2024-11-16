@@ -3,19 +3,19 @@ Performance Summary
 
 Best Implementation per Operation:
 ----------------------------------------
-BOOLEAN_CONDITION     : forest (0.002 ms)
-COMPLEX_DELETE        : forest (0.001 ms)
-COMPLEX_SELECT        : forest (0.001 ms)
+BOOLEAN_CONDITION     : chunk (1.308 ms)
+COMPLEX_DELETE        : forest (0.002 ms)
+COMPLEX_SELECT        : forest (0.002 ms)
 COMPLEX_UPDATE        : forest (0.004 ms)
-DATE_CONDITION        : forest (0.002 ms)
-DELETE                : forest (0.003 ms)
-FREQUENCY_TEST        : forest (0.001 ms)
+DATE_CONDITION        : chunk (1.327 ms)
+DELETE                : forest (0.002 ms)
+FREQUENCY_TEST        : forest (0.002 ms)
 GREATER_THAN_CONDITION: chunk (0.003 ms)
 INSERT                : chunk (0.001 ms)
-RANGE_TEST            : forest (0.135 ms)
-SELECT                : forest (0.001 ms)
+RANGE_TEST            : forest (0.067 ms)
+SELECT                : forest (0.002 ms)
 SEQUENTIAL_TEST       : forest (0.001 ms)
-UNKNOWN_CONDITION     : lfu (0.199 ms)
+UNKNOWN_CONDITION     : lfu (0.084 ms)
 UPDATE                : forest (0.004 ms)
 
 Memory Usage Summary:
