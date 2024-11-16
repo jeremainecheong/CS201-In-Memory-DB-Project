@@ -47,8 +47,9 @@ public class Evaluator {
     }
 
     public void runEvaluation(Scanner scanner) {
-        // String[] implementations = { "backwards_", "chunk_", "forest_", "random_", "lfu_" };
-        String[] implementations = {"forest_","chunk_", "lfu_"};
+        // String[] implementations = { "backwards_", "chunk_", "forest_", "random_",
+        // "lfu_" };
+        String[] implementations = { "forest_", "chunk_", "lfu_" };
         System.out.println("\nSkip to scalability tests? (y/n)");
         System.out.flush();
         String r1 = scanner.nextLine().trim().toLowerCase();
@@ -190,8 +191,8 @@ public class Evaluator {
 
         for (int key : queryKeys) {
             String query = String.format("SELECT * FROM %s WHERE id = %d", tableName, key);
-            if(tableName.startsWith("chunk_")){
-                int warmupKey = random.nextInt(1,1000);
+            if (tableName.startsWith("chunk_")) {
+                int warmupKey = random.nextInt(1, 1000);
                 dbEngine.executeSQL(String.format("SELECT * FROM %s WHERE id = %d", tableName, warmupKey));
             }
 
@@ -200,7 +201,6 @@ public class Evaluator {
             results.recordLatency("FREQUENCY_TEST", System.nanoTime() - start);
         }
     }
-
 
     private void executeSequentialTest(String tableName, DataType dataType, TestResults results) {
         for (int i = 0; i < 1000; i++) {
@@ -239,7 +239,7 @@ public class Evaluator {
 
     public void testScalability() {
         System.out.println("\nStarting scalability test");
-        int[] rowCounts = { 100, 1000, 10000, 30000 };
+        int[] rowCounts = { 100, 1000, 10000, 25000, 50000 };
         String[] implementations = { "forest_", "chunk_", "lfu_" };
 
         for (String impl : implementations) {
@@ -290,7 +290,7 @@ public class Evaluator {
 
     // Method to test scalability, print table, and store results for CSV export
     private void testOperationsForScale(String tableName, int rowCount, String implementation,
-                                        double initialMemoryOverhead) {
+            double initialMemoryOverhead) {
         long totalLatency = 0; // Sum of all latencies
         long maxLatency = Long.MIN_VALUE; // Maximum latency
         long minLatency = Long.MAX_VALUE; // Minimum latency
@@ -321,9 +321,11 @@ public class Evaluator {
 
         // Measure memory after mixed operations phase
         MemoryUsage afterMixedOpsMemory = memoryBean.getHeapMemoryUsage();
-        double memoryOverhead = (afterMixedOpsMemory.getUsed() - initialMemoryUsed) / (1024.0 * 1024.0); // Convert to MB
+        double memoryOverhead = (afterMixedOpsMemory.getUsed() - initialMemoryUsed) / (1024.0 * 1024.0); // Convert to
+                                                                                                         // MB
 
-        // If memory overhead is negative, fall back to initial memory overhead as an approximation
+        // If memory overhead is negative, fall back to initial memory overhead as an
+        // approximation
         if (memoryOverhead < 0) {
             memoryOverhead = initialMemoryOverhead;
         }
@@ -368,7 +370,7 @@ public class Evaluator {
     }
 
     private void printTable(String implementation, int rowCount, long totalLatency, long avgLatency,
-                            long minLatency, long maxLatency, long percentile50, long percentile90, double memoryOverhead, int count) {
+            long minLatency, long maxLatency, long percentile50, long percentile90, double memoryOverhead, int count) {
         System.out.println("\n+--------------------------------------------------+");
         System.out.printf("| %-48s |\n", "Scalability Test Results");
         System.out.println("+--------------------------------------------------+");

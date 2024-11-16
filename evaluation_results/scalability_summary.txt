@@ -3,14 +3,15 @@ Scalability Test Summary
 
 Best Implementation per Row Count (Avg Time per Operation):
 ----------------------------------------
-Rows: 100 - Best Implementation: lfu_ (0.041 ms)
-Rows: 1000 - Best Implementation: lfu_ (0.033 ms)
-Rows: 10000 - Best Implementation: chunk_ (0.110 ms)
-Rows: 50000 - Best Implementation: lfu_ (0.615 ms)
+Rows: 100 - Best Implementation: lfu_ (0.043 ms)
+Rows: 1000 - Best Implementation: chunk_ (0.038 ms)
+Rows: 10000 - Best Implementation: chunk_ (0.112 ms)
+Rows: 25000 - Best Implementation: chunk_ (0.428 ms)
+Rows: 50000 - Best Implementation: chunk_ (0.830 ms)
 
 
 Memory Usage Summary:
 ----------------------------------------
-chunk_: Average Memory Overhead: 79.01 MB
-forest_: Average Memory Overhead: 110.84 MB
-lfu_: Average Memory Overhead: 59.75 MB
+chunk_: Average Memory Overhead: 40.15 MB
+forest_: Average Memory Overhead: 92.03 MB
+lfu_: Average Memory Overhead: 80.51 MB
