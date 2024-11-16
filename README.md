@@ -4,9 +4,9 @@ Authors: Ian Hoe, Jayden Teoh, Jered Wong, Jeremaine Cheong, Jerome Wong, Keegan
 ## Vision
 Traditional database systems rely on highly optimized, general-purpose structures. This project reimagines their design by enhancing fundamental data structures with specialized tweaks to optimize specific query patterns, challenging conventional principles to explore impacts on scalability and performance.
 
-## Approach
+## Design Overview
 
-### Data Structures Tested
+### Data Structures Implemented
 
 1. **ForestMapTable**
    - *Hypothesis:* Multiple synchronized tree-based indexes could provide efficient querying across different columns while maintaining reasonable memory overhead
@@ -18,18 +18,23 @@ Traditional database systems rely on highly optimized, general-purpose structure
    - *Implementation:* Array-based storage with 128-row chunks and MRU tracking
    - *Focus:* Sequential access optimisation and memory efficiency
 
-3. **FrequencyTable**
+3. **LFUTable**
    - *Hypothesis:* Frequency-based data organization could naturally optimize for real-world access patterns
    - *Implementation:* Hybrid approach combining LFU cache with a backing store
    - *Focus:* 'Popularity bias' pattern optimization
 
-### Getting Started
+## Setup and Usage
 
-#### Prerequisites
+### Prerequisites
 - Java JDK 17
 - Apache Maven
+- Python 3.x (for visualizations)
+- Python packages:
+  ```bash
+  pip install pandas matplotlib seaborn numpy
+  ```
 
-#### Building and Running
+### Building and Running
 1. **Compile the project**
    ```bash
    mvn compile
@@ -40,24 +45,71 @@ Traditional database systems rely on highly optimized, general-purpose structure
    mvn exec:java
    ```
 
-3. **Available Commands**
-   ```sql
-   -- Exit the program
-   exit
-   
-   -- Run evaluation tests
-   evaluate
-   
-   -- Execute SQL commands
-   CREATE TABLE table_name (column1, column2, ...)
-   INSERT INTO table_name VALUES (value1, value2, ...)
-   SELECT * FROM table_name WHERE conditions
-   UPDATE table_name SET update WHERE conditions
-   DELETE FROM table_name WHERE conditions
-   ```
+[Previous content until Available Commands remains the same...]
 
-#### Running Experiments
-The evaluation framework provides three types of comprehensive tests:
+### Available Commands
+
+#### System Commands
+```sql
+-- Exit the program
+exit
+
+-- Run evaluation tests
+evaluate
+
+-- Display SQL command syntax 
+help
+```
+
+#### SQL Commands and Implementation Selection
+Tables can be created with specific implementations using prefixes. If no prefix is specified, ChunkTable is used by default.
+
+**Implementation Prefixes:**
+- No prefix or `chunk_` : Uses ChunkTable
+- `forest_` : Uses ForestMapTable
+- `lfu_` : Uses LFUTable
+
+```sql
+-- Using default implementation (ChunkTable)
+CREATE TABLE students (id, name, age, gpa)
+CREATE TABLE chunk_students (id, name, age, gpa)     -- Same as above
+
+-- Using specific implementations
+CREATE TABLE forest_records (id, name, age, gpa)     -- Uses tree-based indexing
+CREATE TABLE lfu_accounts (id, name, age, gpa)       -- Uses frequency-based caching
+
+-- Standard SQL operations work the same for all implementations
+INSERT INTO students VALUES (1, John, 20, 3.5)
+SELECT * FROM forest_records WHERE id < 1000
+UPDATE lfu_accounts SET gpa = 4.0 WHERE id = 1
+DELETE FROM students WHERE gpa < 2.0
+```
+
+#### Supported Query Conditions
+- Equality: `column = value`
+- Comparisons: `column < value`, `column > value`, `column <= value`, `column >= value`
+- Logical operators: `AND`, `OR`
+
+Example queries highlighting implementation strengths:
+```sql
+-- Sequential access (ChunkTable - default)
+CREATE TABLE students (id, name, age, gpa)
+SELECT * FROM students WHERE id >= 100 AND id <= 200
+
+-- Range queries (ForestMapTable)
+CREATE TABLE forest_students (id, name, age, gpa)
+SELECT * FROM forest_students WHERE gpa >= 3.0 AND age < 25
+
+-- Frequently accessed data (FrequencyTable)
+CREATE TABLE lfu_students (id, name, age, gpa)
+SELECT * FROM lfu_students WHERE id = 1
+```
+
+[Rest of the content remains the same...]
+
+## Evaluation Framework
+
+### Types of Tests
 
 1. **Comprehensive Performance Tests**
    - Tests each implementation against different data types
@@ -66,87 +118,55 @@ The evaluation framework provides three types of comprehensive tests:
    - Generates detailed performance reports
 
 2. **Query Pattern Testing**
-   - Tests implementation behavior across different access patterns:
-     
-     a. **Sequential Access**
-     - Evaluates performance of ordered data access
-     - Tests behavior with consecutive primary key lookups
-     - Measures impact of data locality
-     
-     b. **Frequency-based Access**
-     - Uses Zipfian distribution to simulate real-world access patterns
-     - Tests performance with "hot" data paths
-     - Analyzes cache effectiveness
-     
-     c. **Range-based Access**
-     - Tests performance of range queries
-     - Evaluates efficiency of index structures
-     - Measures impact on memory usage
+   - Sequential Access: Evaluates ordered data access performance
+   - Frequency-based Access: Tests real-world access patterns using Zipfian distribution
+   - Range-based Access: Measures range query efficiency
 
 3. **Scalability Tests**
-   - Tests performance with increasing data sizes
-   - Row counts: 100, 1000, 10000, 30000
+   - Tests performance with increasing data sizes (100, 1000, 10000, 30000 rows)
    - Measures throughput and latency
    - Analyzes memory overhead
 
-When running `evaluate`, you'll be prompted to choose:
+### Running Tests
+When running `evaluate`, you'll be prompted:
 ```
 Skip to scalability tests? (y/n)
 > n    // Run comprehensive and pattern tests first
 > y    // Skip to scalability tests
 ```
 
-#### Output Files
-Performance results are saved in the `evaluation_results` directory:
-- `summary_statistics.csv`: Detailed performance metrics
-- `conditional_metrics.csv`: Query condition analysis
-- `scalability_test_results.csv`: Scalability measurements
-- Access pattern metrics: 
-  - `frequency_metrics.csv`: Zipfian access pattern results
-  - `sequential_metrics.csv`: Sequential access performance
-  - `range_metrics.csv`: Range query analysis
+### Test Output
+Results are saved in `evaluation_results/`:
+- Performance Metrics:
+  - `summary_statistics.csv`: Detailed performance data
+  - `conditional_metrics.csv`: Query condition analysis
+  - `scalability_test_results.csv`: Scalability measurements
+- Access Pattern Analysis:
+  - `frequency_metrics.csv`: Zipfian pattern results
+  - `sequential_metrics.csv`: Sequential access data
+  - `range_metrics.csv`: Range query statistics
 
-#### Generating Visualizations
-
-##### Prerequisites
-- Python 3.x
-- Required Python packages:
-  ```bash
-  pip install pandas matplotlib seaborn numpy
-  ```
-
-##### Running the Visualization Suite
+### Generating Visualizations
+Run the visualization suite:
 ```bash
-# Run all visualization scripts
 python visualization_script.py
 python scalability_visualization.py
 python access_pattern_visualization.py
 ```
 
-All generated visualizations will be saved in the `evaluation_results` directory alongside their corresponding data files.
-
-## Results and Insights
-
-### Structure-Specific Findings
-
-1. **ForestMapTable**
-TODO
-
-2. **ChunkTable**
-TODO
-
-3. **LFUTable**
-TODO
-
-### Key Observations
-
-TODO
-
-## Conclusion
-
-This experimental study revealed several important insights about data structure specialization in database systems:
-
-TODO
+Generated visualizations include:
+- Performance analysis
+  - `operation_performance.png`: Operation performance heatmap
+  - `memory_usage.png`: Memory usage patterns
+  - `data_type_performance.png`: Type-specific performance
+- Pattern analysis
+  - `sequential_performance.png`: Sequential access analysis
+  - `frequency_based_performance.png`: Zipfian distribution results
+  - `range_query_performance.png`: Range query efficiency
+- Scalability analysis
+  - `scalability_trend.png`: Performance scaling
+  - `memory_scaling.png`: Memory usage patterns
+  - `throughput_analysis.png`: Throughput characteristics
 
 ---
 
