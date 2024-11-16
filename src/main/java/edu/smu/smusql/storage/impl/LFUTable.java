@@ -5,7 +5,7 @@ import edu.smu.smusql.storage.DataType;
 
 import java.util.*;
 
-public class FrequencyTable implements Table {
+public class LFUTable implements Table {
     private static final int CACHE_CAPACITY = 128;
     
     private final List<String> columnNames;
@@ -17,7 +17,7 @@ public class FrequencyTable implements Table {
     private int minFrequency;
     private int size;
     
-    public FrequencyTable(List<String> columns) {
+    public LFUTable(List<String> columns) {
         this.columnNames = new ArrayList<>(columns);
         this.cache = new HashMap<>();
         this.backupStore = new ArrayList<>(); 
