@@ -6,12 +6,14 @@ import edu.smu.smusql.storage.DataType;
 import java.util.*;
 
 public class LFUTable implements Table {
-    private static final int CACHE_CAPACITY = 1000;
+    private static final int CACHE_CAPACITY = 128;
     
     private final List<String> columnNames;
-    private final Map<Integer, DataType[]> cache; // Stores actual Data
+    private final Map<Integer, DataType[]> cache; // Stores actual Data (in cache)
     private final Map<Integer, Integer> frequencies; // Tracks frequency per key
     private final Map<Integer, LinkedHashSet<Integer>> freqList; // Groups keys by frequency
+    private final List<DataType[]> backupStore; // Stores actual Data (in backupStore)
+    private final String idColumn; // Primary key
     private int minFrequency;
     private int size;
     
@@ -20,6 +22,9 @@ public class LFUTable implements Table {
         this.cache = new HashMap<>();
         this.frequencies = new HashMap<>();
         this.freqList = new HashMap<>();
+        this.idColumn = columns.get(0); // Assume primary key is first column
+        this.backupStore = new ArrayList<>(); 
+        // this.idColumnIndex = 0;
         this.minFrequency = 0;
         this.size = 0;
         
@@ -46,12 +51,75 @@ public class LFUTable implements Table {
         frequencies.remove(keyToRemove);
         size--;
     }
+
+    private DataType extractIdFromConditions(List<String[]> conditions) {
+        if (conditions == null || conditions.isEmpty()) return null;
+        
+        // Look for exact match condition on ID column
+        for (String[] condition : conditions) {
+            if (condition[1].equals(idColumn) && condition[2].equals("=")) {
+                return DataType.fromString(condition[3]);
+            }
+        }
+        return null;
+    }
+
+    private List<Map<String, String>> handleIdBasedSelect(DataType targetId, List<String[]> conditions) {
+        List<Map<String, String>> results = new ArrayList<>();
+
+        // Check cache first
+        DataType[] cacheRecord = cache.get(targetId);
+        int key = Arrays.hashCode(cacheRecord);
+        if (cacheRecord != null) {
+            // Cache hit
+            if (matchesConditions(cacheRecord, conditions)) {
+                incrementFrequency(key);
+                results.add(rowToMap(cacheRecord));
+            }
+            return results;  // Return immediately as we found or checked the specific record
+        }
+        
+        // Cache miss - check backup store
+        for (DataType[] backupRecord : backupStore) {
+            if (matchesConditions(backupRecord, conditions)) {
+                results.add(rowToMap(backupRecord));
+
+                // Cache the fetched row
+                if (size >= CACHE_CAPACITY) {
+                    evict();
+                }
+                cache.put(key, backupRecord);
+                frequencies.put(key, 1);
+                freqList.get(1).add(key);
+                minFrequency = 1;
+                size++;
+            }
+        } 
+        
+        return results;
+    }
+
+    private List<Map<String, String>> handleNonIdSelect(List<String[]> conditions) {
+        // For non-ID queries, look through entire db 
+        List<Map<String, String>> results = new ArrayList<>();
+        
+        for (DataType[] record : backupStore) {
+            if (matchesConditions(record, conditions)) {
+                results.add(rowToMap(record));
+            }
+        }
+        return results;
+    }
     
     @Override
     public void insert(List<String> values) {
         DataType[] row = createRow(values);
         if (row == null) return;
-        
+
+        // First add to backup store
+        backupStore.add(row);
+
+        // Then add to cache
         int key = Arrays.hashCode(row);
 
         if (cache.containsKey(key)) {
@@ -73,16 +141,16 @@ public class LFUTable implements Table {
     
     @Override
     public List<Map<String, String>> select(List<String[]> conditions) {
-        List<Map<String, String>> results = new ArrayList<>();
-        
-        for (Map.Entry<Integer, DataType[]> entry : cache.entrySet()) {
-            if (matchesConditions(entry.getValue(), conditions)) {
-                incrementFrequency(entry.getKey());
-                results.add(rowToMap(entry.getValue()));
-            }
+        // First check if we're querying by ID
+        DataType targetId = extractIdFromConditions(conditions);
+
+        if (targetId != null) {
+            // ID-based lookup
+            return handleIdBasedSelect(targetId, conditions);
+        } else {
+            // Non-ID based query, fallback to backup store
+            return handleNonIdSelect(conditions); 
         }
-        
-        return results;
     }
     
     @Override
@@ -216,4 +284,6 @@ public class LFUTable implements Table {
         }
         return map;
     }
+
+    
 }
